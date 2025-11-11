@@ -1,120 +1,47 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html>
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GitHub语音输入测试</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; font-family: sans-serif; }
-    body { padding: 20px; max-width: 600px; margin: 0 auto; }
-    h1 { text-align: center; margin-bottom: 30px; color: #2d3748; }
-    .btn-group { display: flex; gap: 15px; justify-content: center; margin-bottom: 30px; }
-    button { padding: 12px 24px; font-size: 18px; border: none; border-radius: 8px; cursor: pointer; }
-    #startBtn { background: #48bb78; color: white; }
-    #stopBtn { background: #f56565; color: white; opacity: 0.5; cursor: not-allowed; }
-    #result { padding: 20px; border: 2px solid #e2e8f0; border-radius: 8px; min-height: 100px; font-size: 16px; line-height: 1.6; color: #4a5568; }
-    .tip { text-align: center; margin-top: 10px; font-size: 14px; color: #718096; }
-  </style>
+  <title>极简语音测试</title>
 </head>
 <body>
-  <h1>语音输入测试</h1>
-  
-  <div class="btn-group">
-    <button id="startBtn">开始聆听</button>
-    <button id="stopBtn" disabled>停止聆听</button>
-  </div>
-
-  <div id="result">点击「开始聆听」，说出内容后将显示在这里...</div>
-  <p class="tip">提示：请使用Chrome/Edge浏览器，确保麦克风权限已开启</p>
+  <button onclick="startRec()">点击说话</button>
+  <div id="res"></div>
 
   <script>
-    const startBtn = document.getElementById('startBtn');
-    const stopBtn = document.getElementById('stopBtn');
-    const resultEl = document.getElementById('result');
-    let recognition = null;
-    let isListening = false;
-
-    // 初始化语音识别
-    function initRecognition() {
+    // 仅保留核心识别逻辑，无任何多余代码
+    function startRec() {
+      const res = document.getElementById('res');
       // 检测浏览器支持
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        resultEl.textContent = '❌ 您的浏览器不支持语音识别，请使用最新版Chrome或Edge';
-        startBtn.disabled = true;
-        startBtn.style.opacity = 0.5;
-        return null;
+        res.innerText = '浏览器不支持，用Chrome/Edge';
+        return;
       }
 
-      // 创建识别实例
-      recognition = new SpeechRecognition();
-      recognition.lang = 'zh-CN'; // 中文识别
-      recognition.interimResults = true; // 实时显示中间结果
-      recognition.continuous = true; // 持续聆听
+      const rec = new SpeechRecognition();
+      rec.lang = 'zh-CN'; // 中文
+      rec.continuous = false; // 只识别一次
+      rec.interimResults = false; // 只返回最终结果
 
-      // 识别结果回调（核心）
-      recognition.onresult = (event) => {
-        let transcript = '';
-        // 拼接所有识别结果
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-        resultEl.textContent = `🎤 你说的：${transcript}`;
+      res.innerText = '正在听...';
+      rec.start();
+
+      // 识别成功
+      rec.onresult = (e) => {
+        res.innerText = '识别结果：' + e.results[0][0].transcript;
       };
 
-      // 识别错误回调
-      recognition.onerror = (error) => {
-        const errorMsg = {
-          'not-allowed': '❌ 麦克风权限被拒绝，请在浏览器设置中开启',
-          'no-speech': '🔇 未检测到声音，请靠近麦克风大声说话',
-          'network': '🌐 网络错误，语音识别需要稳定网络',
-          'audio-capture': '❌ 未找到麦克风设备'
-        };
-        resultEl.textContent = errorMsg[error.error] || `❌ 识别错误：${error.error}`;
+      // 识别失败（关键：显示具体错误）
+      rec.onerror = (err) => {
+        res.innerText = '错误原因：' + err.error;
       };
 
-      // 识别结束后自动重启（持续聆听）
-      recognition.onend = () => {
-        if (isListening) {
-          recognition.start();
-        }
+      // 识别结束
+      rec.onend = () => {
+        if (res.innerText === '正在听...') res.innerText = '未识别到声音';
       };
-
-      return recognition;
     }
-
-    // 开始聆听
-    function startListening() {
-      if (!recognition) recognition = initRecognition();
-      if (!recognition || isListening) return;
-
-      isListening = true;
-      recognition.start();
-      startBtn.disabled = true;
-      stopBtn.disabled = false;
-      startBtn.style.opacity = 0.5;
-      stopBtn.style.opacity = 1;
-      resultEl.textContent = '🔍 正在聆听... 请说话';
-    }
-
-    // 停止聆听
-    function stopListening() {
-      if (!recognition || !isListening) return;
-
-      isListening = false;
-      recognition.stop();
-      startBtn.disabled = false;
-      stopBtn.disabled = true;
-      startBtn.style.opacity = 1;
-      stopBtn.style.opacity = 0.5;
-      resultEl.textContent = `✅ 已停止聆听\n\n最后识别内容：${resultEl.textContent.replace('🔍 正在聆听... 请说话', '').replace('🎤 你说的：', '')}`;
-    }
-
-    // 按钮事件绑定
-    startBtn.addEventListener('click', startListening);
-    stopBtn.addEventListener('click', stopListening);
-
-    // 页面加载时初始化
-    window.onload = initRecognition;
   </script>
 </body>
 </html>
