@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>出行语音助手</title>
+  <style>
+    body { max-width: 600px; margin: 20px auto; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    .status { margin: 10px 0; padding: 10px; border-radius: 8px; font-size: 16px; }
+    .listening { background: #E8F3FF; color: #165DFF; }
+    .idle { background: #F5F5F5; color: #666; }
+    .alert { background: #FFF3CD; color: #D39E00; font-weight: bold; margin: 10px 0; padding: 12px; border-radius: 8px; font-size: 16px; }
+    button { padding: 14px 32px; font-size: 20px; background: #165DFF; color: white; border: none; border-radius: 8px; cursor: pointer; margin-right: 10px; margin-bottom: 10px; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    .log { height: 50vh; overflow-y: auto; border: 1px solid #eee; padding: 10px; border-radius: 8px; margin-top: 10px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h1>出行语音助手</h1>
+  <div class="status idle" id="status">未启用 - 点击开始按钮使用</div>
+  <button id="startBtn">开始使用出行语音助手</button>
+  <button id="stopBtn" disabled>暂停出行语音助手</button>
+  <div class="alert" id="alert" style="display: none;"></div>
+  <div class="log" id="log"></div>
+
+  <script>
+    // 配置项（用户可修改）
+    const CONFIG = {
+      triggerWords: ['好困', '疲劳了', '想睡觉', '眼睛酸', '开不动了', '找充电桩', '附近服务区'], // 可自定义关键词
+      DASHSCOPE_API_KEY: 'sk-550f45f609c5430d81ac382c31a4fccb', // 替换为自己的API Key
+      responseMode: 'direct' // 仅保留直接回复模式（无需唤起车载）
+    };
+
+    // 全局变量
+    const statusEl = document.getElementById('status');
+    const alertEl = document.getElementById('alert');
+    const logEl = document.getElementById('log');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    let recognition;
+    let isListening = false;
+
+    // 初始化语音识别（实时监听）
+    function initRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        showAlert('你的浏览器不支持语音功能，请使用Chrome或Edge浏览器');
+        return null;
+      }
+
+      const rec = new SpeechRecognition();
+      rec.lang = 'zh-CN';
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.maxAlternatives = 1;
+
+      // 实时识别结果处理
+      rec.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        log(`实时识别：${transcript}`);
+
+        // 关键词检测
+        const hitWord = CONFIG.triggerWords.find(word => transcript.includes(word));
+        if (hitWord) {
+          handleTrigger(hitWord, transcript);
+          rec.stop();
+          setTimeout(() => isListening && rec.start(), 2000); // 避免重复触发
+        }
+      };
+
+      // 状态回调
+      rec.onstart = () => {
+        isListening = true;
+        statusEl.className = 'status listening';
+        statusEl.textContent = '正在运行中...';
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        log('出行语音助手已启动，等待关键词触发...');
+        document.activeElement.blur(); // 收起手机键盘
+      };
+
+      rec.onend = () => {
+        if (isListening) rec.start();
+      };
+
+      rec.onerror = (error) => {
+        log(`识别错误：${error.message}`);
+        if (error.error === 'not-allowed') {
+          showAlert('请允许麦克风权限，否则无法使用语音功能');
+        }
+      };
+
+      return rec;
+    }
+
+    // 关键词触发处理（调用百炼，高级角色限定）
+    async function handleTrigger(hitWord, fullText) {
+      showAlert(`已检测到需求【${hitWord}】，正在生成专业建议...`, 'warning');
+      log(`触发关键词【${hitWord}】，原始文本：${fullText}`);
+
+      try {
+        const advice = await getAdviceFromBailian(hitWord, fullText);
+        showAlert(`专业建议：${advice}`);
+        textToSpeech(advice); // Web Speech API语音播报
+        log(`生成建议：${advice}`);
+      } catch (err) {
+        showAlert('生成建议失败，请检查API Key是否正确或网络是否通畅');
+        log(`百炼调用失败：${err.message}`);
+      }
+    }
+
+    // 调用百炼生成建议（高级角色限定，无预设回复）
+    async function getAdviceFromBailian(hitWord, fullText) {
+      // 高级角色限定词（最高级专业度）
+      const prompt = `你是全球顶级的出行安全专家，拥有20年驾驶场景应急处理经验，专为用户提供最权威、最实用的出行帮助。用户当前需求："${fullText}"，关键词【${hitWord}】，请给出简洁精准的建议（15-25字），必须专业、可落地，符合交通规则。`;
+      
+      const response = await fetch('https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${CONFIG.DASHSCOPE_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'qwen3-omni-flash', // 轻量高效模型
+          input: { prompt },
+          parameters: { result_format: 'text', max_new_tokens: 60, temperature: 0.1 } // 低随机性，结果更稳定
+        })
+      });
+
+      const data = await response.json();
+      if (data.output?.text) return data.output.text.trim();
+      throw new Error(`百炼返回异常：${JSON.stringify(data)}`);
+    }
+
+    // Web Speech API文本转语音（优化车载场景听感）
+    function textToSpeech(text) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'zh-CN';
+      utterance.rate = 0.85; // 稍慢，提升车载环境辨识度
+      utterance.volume = 1;
+      utterance.pitch = 1.1; // 轻微提音调，更清晰
+      window.speechSynthesis.speak(utterance);
+    }
+
+    // 辅助函数：显示提示
+    function showAlert(msg, type = 'info') {
+      alertEl.textContent = msg;
+      alertEl.style.display = 'block';
+      if (type !== 'warning') {
+        setTimeout(() => alertEl.style.display = 'none', 5000);
+      }
+    }
+
+    // 辅助函数：打印日志
+    function log(msg) {
+      const time = new Date().toLocaleTimeString();
+      const logItem = document.createElement('div');
+      logItem.textContent = `[${time}] ${msg}`;
+      logEl.appendChild(logItem);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    // 按钮事件（适配移动端触摸）
+    startBtn.addEventListener('click', () => {
+      recognition = initRecognition();
+      if (recognition) recognition.start();
+    });
+
+    stopBtn.addEventListener('click', () => {
+      isListening = false;
+      recognition?.stop();
+      statusEl.className = 'status idle';
+      statusEl.textContent = '已暂停使用';
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      log('出行语音助手已暂停');
+      alertEl.style.display = 'none';
+    });
+
+    // 移动端触摸事件优化
+    startBtn.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      recognition = initRecognition();
+      if (recognition) recognition.start();
+    });
+
+    stopBtn.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      isListening = false;
+      recognition?.stop();
+      statusEl.className = 'status idle';
+      statusEl.textContent = '已暂停使用';
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      log('出行语音助手已暂停');
+      alertEl.style.display = 'none';
+    });
+
+    // 页面加载提示
+    log('出行语音助手已就绪，点击"开始使用"按钮启动');
+  </script>
+</body>
+</html>
