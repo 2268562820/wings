@@ -3,33 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>出行语音助手</title>
+  <title>语音识别测试</title>
   <style>
     button { padding: 10px 20px; font-size: 16px; margin: 5px; }
     #result { margin: 20px 0; padding: 10px; border: 1px solid #ccc; min-height: 50px; }
   </style>
 </head>
 <body>
-  <h1>出行语音助手</h1>
-  <button id="startBtn">开始使用</button>
-  <button id="stopBtn" disabled>暂停使用</button>
-  <div id="result"></div>
+  <h1>基础语音识别测试</h1>
+  <button id="startBtn">开始聆听</button>
+  <button id="stopBtn" disabled>停止聆听</button>
+  <div id="result">请点击“开始聆听”并说出内容</div>
 
   <script>
-    // 配置区域：替换为你的阿里云百炼API密钥和自定义关键词
-    const CONFIG = {
-      DASHSCOPE_API_KEY: 'sk-550f45f609c5430d81ac382c31a4fccb', // 🔴 必须替换
-      triggerWords: ['好困', '疲劳了', '想睡觉', '眼睛酸', '开不动了', '找充电桩', '附近服务区', '开启助手'],
-      responseMode: 'direct'
-    };
-
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const resultEl = document.getElementById('result');
     let recognition;
     let isListening = false;
 
-    // 初始化语音识别（Chrome/Edge支持）
+    // 初始化语音识别（兼容Chrome/Edge）
     function initRecognition() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
@@ -37,24 +30,20 @@
         return null;
       }
       recognition = new SpeechRecognition();
-      recognition.lang = 'zh-CN';
-      recognition.interimResults = true;
-      recognition.continuous = true;
+      recognition.lang = 'zh-CN'; // 设置为中文
+      recognition.interimResults = true; // 实时显示结果
+      recognition.continuous = true; // 持续聆听
 
+      // 识别结果回调
       recognition.onresult = (event) => {
         let transcript = '';
         for (let i = event.resultIndex; i < event.results.length; i++) {
           transcript += event.results[i][0].transcript;
         }
-        resultEl.textContent = transcript;
-
-        // 关键词触发
-        const hitWord = CONFIG.triggerWords.find(word => transcript.includes(word));
-        if (hitWord) {
-          callAliyunAPI(hitWord, transcript);
-        }
+        resultEl.textContent = '你说的：' + transcript;
       };
 
+      // 结束后自动重启（如果处于聆听状态）
       recognition.onend = () => {
         if (isListening) recognition.start();
       };
@@ -62,35 +51,7 @@
       return recognition;
     }
 
-    // 调用阿里云百炼API
-    async function callAliyunAPI(hitWord, fullText) {
-      const prompt = `你是全球顶级的出行安全专家，用户当前需求："${fullText}"，关键词【${hitWord}】，请给出简洁精准的建议（15-25字）。`;
-      
-      try {
-        const response = await fetch('https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${CONFIG.DASHSCOPE_API_KEY}`
-          },
-          body: JSON.stringify({
-            model: 'qwen3-omni-flash',
-            input: { prompt },
-            parameters: { result_format: 'text', max_new_tokens: 60, temperature: 0.1 }
-          })
-        });
-
-        const data = await response.json();
-        if (data.output?.text) {
-          resultEl.textContent = `AI建议：${data.output.text}`;
-        }
-      } catch (error) {
-        console.error('API调用失败:', error);
-        resultEl.textContent = 'API调用失败，请检查密钥和网络';
-      }
-    }
-
-    // 启动语音识别
+    // 开始聆听
     function startRecognition() {
       if (!recognition) initRecognition();
       if (recognition && !isListening) {
@@ -102,14 +63,14 @@
       }
     }
 
-    // 暂停语音识别
+    // 停止聆听
     function stopRecognition() {
       if (recognition && isListening) {
         isListening = false;
         recognition.stop();
         startBtn.disabled = false;
         stopBtn.disabled = true;
-        resultEl.textContent = '已暂停聆听';
+        resultEl.textContent = '已停止聆听';
       }
     }
 
