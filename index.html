@@ -3,138 +3,377 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>上车吧 - 智能上车点推荐</title>
+    <title>🚗 上车吧 - 智能上车点评估</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: sans-serif; }
-        body { background: linear-gradient(135deg, #1a2a6c, #b21f1f); color: white; min-height: 100vh; padding: 20px; }
-        .container { max-width: 800px; margin: 0 auto; background: rgba(0,0,0,0.7); border-radius: 20px; padding: 20px; }
-        h1 { text-align: center; margin-bottom: 20px; color: #ff8a00; }
-        .camera-container { width: 100%; height: 300px; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 20px; }
-        #video { width: 100%; height: 100%; object-fit: cover; }
-        button { width: 100%; padding: 15px; margin: 5px 0; border: none; border-radius: 8px; background: #4CAF50; color: white; font-size: 16px; cursor: pointer; }
-        button:disabled { background: #666; cursor: not-allowed; }
-        .result { background: rgba(255,255,255,0.1); padding: 20px; border-radius: 10px; margin-top: 20px; }
-        .score { font-size: 48px; font-weight: bold; text-align: center; margin: 10px 0; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 10px;
+            color: #fff;
+        }
+        
+        .subtitle {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+        
+        .camera-box {
+            width: 100%;
+            height: 250px;
+            background: #000;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 15px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            color: white;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+        
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .secondary {
+            background: linear-gradient(45deg, #2196F3, #0b7dda);
+        }
+        
+        .result-card {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 15px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        
+        .score {
+            font-size: 3rem;
+            font-weight: bold;
+            text-align: center;
+            margin: 10px 0;
+        }
+        
         .safe { color: #4CAF50; }
         .warning { color: #FFC107; }
         .danger { color: #F44336; }
+        
+        .recommendation {
+            text-align: center;
+            font-size: 1.1rem;
+            margin: 10px 0;
+        }
+        
+        .objects-list {
+            margin-top: 10px;
+        }
+        
+        .object-tag {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 5px 10px;
+            border-radius: 15px;
+            margin: 3px;
+            font-size: 0.9rem;
+        }
+        
+        .qrcode-section {
+            text-align: center;
+            margin-top: 15px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 3px solid white;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        footer {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 0.8rem;
+            opacity: 0.7;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🚗 上车吧 - 智能上车点评估</h1>
+        <header>
+            <h1>🚗 上车吧</h1>
+            <p class="subtitle">智能上车点安全评估</p>
+        </header>
         
-        <div class="camera-container">
+        <div class="camera-box">
             <video id="video" autoplay playsinline></video>
         </div>
         
-        <button id="startBtn">开启摄像头</button>
-        <button id="analyzeBtn" disabled>分析安全度</button>
-        
-        <div class="result" id="result" style="display: none;">
-            <h2>安全评估结果</h2>
-            <div class="score" id="score">--</div>
-            <p id="recommendation">正在分析中...</p>
-            <div id="objects"></div>
-            <div id="qrcode" style="margin-top: 20px;"></div>
+        <div class="controls">
+            <button id="startBtn" class="secondary">开启摄像头</button>
+            <button id="analyzeBtn" disabled>分析安全度</button>
         </div>
+        
+        <div class="result-card" id="result" style="display: none;">
+            <h3>安全评估结果</h3>
+            <div class="score" id="score">--</div>
+            <div class="recommendation" id="recommendation">分析中...</div>
+            
+            <div class="objects-list" id="objects">
+                <!-- 检测到的物体会显示在这里 -->
+            </div>
+            
+            <div class="qrcode-section">
+                <h4>位置分享码</h4>
+                <div id="qrcode"></div>
+                <p style="margin-top: 8px; font-size: 0.9rem;">司机扫描即可找到您</p>
+            </div>
+        </div>
+        
+        <div class="loading" id="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>AI正在分析环境...</p>
+        </div>
+        
+        <footer>
+            <p>智慧交通导论项目 | 基于AI的智能安全评估</p>
+        </footer>
     </div>
 
     <script>
+        // 获取DOM元素
         const video = document.getElementById('video');
         const startBtn = document.getElementById('startBtn');
         const analyzeBtn = document.getElementById('analyzeBtn');
         const result = document.getElementById('result');
+        const loading = document.getElementById('loading');
         const scoreElement = document.getElementById('score');
         const recommendationElement = document.getElementById('recommendation');
         const objectsElement = document.getElementById('objects');
         
         let model = null;
+        let stream = null;
         
+        // 开启摄像头
         startBtn.addEventListener('click', async () => {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
+                startBtn.textContent = '开启中...';
+                startBtn.disabled = true;
+                
+                stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: 'environment' } 
                 });
+                
                 video.srcObject = stream;
                 analyzeBtn.disabled = false;
                 startBtn.textContent = '摄像头已开启';
-                startBtn.disabled = true;
                 
                 // 加载AI模型
+                loading.style.display = 'block';
                 model = await cocoSsd.load();
+                loading.style.display = 'none';
                 
             } catch (err) {
-                alert('无法访问摄像头: ' + err.message);
+                alert('无法访问摄像头，请确保已授权摄像头权限');
+                startBtn.textContent = '开启摄像头';
+                startBtn.disabled = false;
             }
         });
         
+        // 分析安全度
         analyzeBtn.addEventListener('click', async () => {
-            if (!model) return;
+            if (!model) {
+                alert('AI模型尚未加载完成');
+                return;
+            }
             
-            const predictions = await model.detect(video);
-            const safetyResult = analyzeSafety(predictions);
-            displayResults(safetyResult, predictions);
-            generateQRCode();
+            loading.style.display = 'block';
+            result.style.display = 'none';
+            analyzeBtn.disabled = true;
+            
+            try {
+                // 使用AI模型检测物体
+                const predictions = await model.detect(video);
+                
+                // 分析安全度
+                const safetyResult = analyzeSafety(predictions);
+                
+                // 显示结果
+                displayResults(safetyResult, predictions);
+                
+                // 生成二维码
+                generateQRCode();
+                
+            } catch (err) {
+                alert('分析失败: ' + err.message);
+            } finally {
+                loading.style.display = 'none';
+                result.style.display = 'block';
+                analyzeBtn.disabled = false;
+            }
         });
         
+        // 分析安全度函数
         function analyzeSafety(predictions) {
             let safetyScore = 100;
+            
+            // 物体权重配置
             const objectWeights = {
-                'person': -5, 'car': -10, 'truck': -15, 'bus': -20,
-                'traffic light': 5, 'stop sign': 10, 'parking meter': 15,
+                'person': -3,       // 行人
+                'car': -8,          // 小汽车
+                'truck': -12,       // 卡车
+                'bus': -15,         // 公交车
+                'motorcycle': -10,  // 摩托车
+                'bicycle': -5,      // 自行车
+                'traffic light': 5, // 交通灯
+                'stop sign': 8,     // 停止标志
+                'parking meter': 12 // 停车计时器
             };
             
+            // 计算安全分数
             predictions.forEach(prediction => {
-                if (objectWeights[prediction.class] !== undefined) {
-                    safetyScore += objectWeights[prediction.class];
+                const className = prediction.class;
+                if (objectWeights[className] !== undefined) {
+                    safetyScore += objectWeights[className];
                 }
             });
             
+            // 限制分数范围
             safetyScore = Math.max(0, Math.min(100, safetyScore));
             
+            // 根据分数给出建议
             let recommendation = '';
             let level = '';
             
-            if (safetyScore >= 70) {
+            if (safetyScore >= 75) {
                 level = 'safe';
-                recommendation = '✅ 安全的上车点';
-            } else if (safetyScore >= 40) {
+                recommendation = '✅ 安全的上车点，可在此等待';
+            } else if (safetyScore >= 50) {
                 level = 'warning';
-                recommendation = '⚠️ 一般位置，建议寻找更安全位置';
+                recommendation = '⚠️ 位置一般，建议寻找更安全位置';
             } else {
                 level = 'danger';
-                recommendation = '❌ 危险位置，请立即移动';
+                recommendation = '❌ 危险位置！请立即移动到安全区域';
             }
             
-            return { score: safetyScore, recommendation: recommendation, level: level };
+            return {
+                score: Math.round(safetyScore),
+                recommendation: recommendation,
+                level: level
+            };
         }
         
+        // 显示结果
         function displayResults(safetyResult, predictions) {
             scoreElement.textContent = safetyResult.score;
             scoreElement.className = 'score ' + safetyResult.level;
             recommendationElement.textContent = safetyResult.recommendation;
             
-            objectsElement.innerHTML = '<h3>检测到的物体:</h3>';
-            predictions.forEach(prediction => {
-                objectsElement.innerHTML += `<div>${prediction.class} (${Math.round(prediction.score * 100)}%)</div>`;
-            });
-            
-            result.style.display = 'block';
+            // 显示检测到的物体
+            objectsElement.innerHTML = '<h4>检测到的物体:</h4>';
+            if (predictions.length === 0) {
+                objectsElement.innerHTML += '<p>未检测到明显物体</p>';
+            } else {
+                predictions.forEach(prediction => {
+                    const objectTag = document.createElement('span');
+                    objectTag.className = 'object-tag';
+                    objectTag.textContent = `${prediction.class} (${Math.round(prediction.score * 100)}%)`;
+                    objectsElement.appendChild(objectTag);
+                });
+            }
         }
         
+        // 生成二维码
         function generateQRCode() {
-            const locationId = Math.random().toString(36).substring(2, 10).toUpperCase();
-            const locationText = `上车点位置码: ${locationId}\n时间: ${new Date().toLocaleString()}`;
+            const locationId = 'LOC-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+            const locationText = `上车点位置码: ${locationId}\n时间: ${new Date().toLocaleTimeString()}`;
             
-            QRCode.toCanvas(locationText, { width: 150, height: 150 }, function(err, canvas) {
-                if (!err) {
-                    document.getElementById('qrcode').innerHTML = '<h3>位置二维码:</h3>';
-                    document.getElementById('qrcode').appendChild(canvas);
+            // 清除之前的二维码
+            const qrcodeContainer = document.getElementById('qrcode');
+            qrcodeContainer.innerHTML = '';
+            
+            // 生成新二维码
+            QRCode.toCanvas(locationText, { 
+                width: 120, 
+                height: 120,
+                margin: 1
+            }, function(err, canvas) {
+                if (err) {
+                    console.error(err);
+                    qrcodeContainer.innerHTML = '<p>二维码生成失败</p>';
+                    return;
                 }
+                qrcodeContainer.appendChild(canvas);
             });
         }
     </script>
