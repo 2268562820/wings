@@ -3,392 +3,744 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>👁️ TrafficLens - 实时交通场景理解</title>
+    <title>TrafficLens - 视障人士交通辅助系统</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <style>
+        :root {
+            --primary-color: #1a73e8;
+            --safe-color: #34a853;
+            --warning-color: #f9ab00;
+            --danger-color: #ea4335;
+            --background-color: #f8f9fa;
+            --text-color: #202124;
+            --card-background: #ffffff;
+        }
+        
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --background-color: #202124;
+                --text-color: #e8eaed;
+                --card-background: #2d2e30;
+            }
+        }
+        
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: 'Segoe UI', 'PingFang SC', sans-serif;
         }
         
         body {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-            min-height: 100vh;
-            padding: 15px;
-        }
-        
-        .container {
-            max-width: 400px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            padding: 16px;
+            max-width: 500px;
             margin: 0 auto;
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         }
         
         header {
             text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 24px;
         }
         
         h1 {
-            font-size: 1.5rem;
-            margin-bottom: 5px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
+            font-size: 1.75rem;
+            margin-bottom: 8px;
+            color: var(--primary-color);
         }
         
         .subtitle {
-            font-size: 0.9rem;
+            font-size: 1rem;
             opacity: 0.8;
         }
         
-        .camera-container {
-            width: 100%;
-            height: 200px;
-            background: #000;
-            border-radius: 12px;
-            overflow: hidden;
-            margin-bottom: 15px;
-            position: relative;
+        .status-card {
+            background-color: var(--card-background);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
         }
         
-        #video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
+        .status-card.safe {
+            border-left: 6px solid var(--safe-color);
         }
         
-        .camera-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+        .status-card.warning {
+            border-left: 6px solid var(--warning-color);
+        }
+        
+        .status-card.danger {
+            border-left: 6px solid var(--danger-color);
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+            100% { transform: scale(1); }
+        }
+        
+        .status-header {
             display: flex;
-            justify-content: center;
             align-items: center;
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
+            margin-bottom: 12px;
+        }
+        
+        .status-icon {
+            font-size: 2rem;
+            margin-right: 12px;
+        }
+        
+        .status-text {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        
+        .status-description {
             font-size: 1rem;
+            opacity: 0.9;
         }
         
         .controls {
             display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 20px;
         }
         
         button {
-            flex: 1;
-            padding: 12px;
+            padding: 16px;
             border: none;
-            border-radius: 10px;
-            background: #4CAF50;
-            color: white;
-            font-weight: bold;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 600;
             cursor: pointer;
+            transition: all 0.2s ease;
+            background-color: var(--primary-color);
+            color: white;
+        }
+        
+        button:active {
+            transform: scale(0.98);
         }
         
         button:disabled {
-            background: #666;
+            background-color: #cccccc;
+            color: #666666;
             cursor: not-allowed;
+            transform: none;
         }
         
-        .assistance-panel {
-            background: rgba(255, 255, 255, 0.15);
-            border-radius: 12px;
-            padding: 15px;
-            margin-bottom: 15px;
+        .sensors-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 16px;
         }
         
-        .alert-item {
-            background: rgba(255, 255, 255, 0.2);
-            padding: 10px;
-            border-radius: 8px;
-            margin: 8px 0;
+        .sensor-item {
             display: flex;
+            flex-direction: column;
             align-items: center;
-            gap: 10px;
-        }
-        
-        .alert-icon {
-            font-size: 1.2rem;
-        }
-        
-        .danger { background: rgba(244, 67, 54, 0.3); }
-        .warning { background: rgba(255, 152, 0, 0.3); }
-        .info { background: rgba(33, 150, 243, 0.3); }
-        
-        .scene-info {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 10px;
+            padding: 12px;
+            background-color: rgba(0, 0, 0, 0.05);
             border-radius: 8px;
-            margin-top: 10px;
+        }
+        
+        .sensor-label {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            margin-bottom: 4px;
+        }
+        
+        .sensor-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        
+        .detected-objects {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        
+        .object-tag {
+            background-color: rgba(26, 115, 232, 0.1);
+            color: var(--primary-color);
+            padding: 6px 12px;
+            border-radius: 20px;
             font-size: 0.9rem;
         }
         
-        .loading {
-            text-align: center;
-            padding: 20px;
+        .settings-panel {
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(0, 0, 0, 0.1);
         }
         
-        .spinner {
-            border: 3px solid rgba(255, 255, 255, 0.3);
+        .settings-title {
+            font-size: 1.1rem;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+        
+        .setting-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+        
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
             border-radius: 50%;
-            border-top: 3px solid white;
-            width: 30px;
-            height: 30px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
         }
         
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        input:checked + .slider {
+            background-color: var(--primary-color);
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+        
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
         }
         
         footer {
             text-align: center;
-            margin-top: 15px;
-            font-size: 0.8rem;
+            margin-top: 30px;
+            font-size: 0.9rem;
             opacity: 0.7;
+        }
+        
+        .debug-info {
+            margin-top: 16px;
+            font-size: 0.8rem;
+            opacity: 0.6;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>👁️ TrafficLens</h1>
-            <p class="subtitle">实时交通场景理解与导航辅助</p>
-        </header>
-        
-        <div class="camera-container">
-            <video id="video" autoplay playsinline></video>
-            <div class="camera-overlay" id="cameraOverlay">
-                准备扫描环境
+    <header>
+        <h1>TrafficLens</h1>
+        <p class="subtitle">视障人士交通辅助系统</p>
+    </header>
+    
+    <main>
+        <div class="status-card" id="statusCard">
+            <div class="status-header">
+                <div class="status-icon" id="statusIcon">👁️</div>
+                <div class="status-text" id="statusText">准备就绪</div>
+            </div>
+            <div class="status-description" id="statusDescription">
+                点击"启动辅助系统"开始使用
+            </div>
+            <div class="detected-objects" id="detectedObjects">
+                <!-- 检测到的物体将在这里显示 -->
+            </div>
+            
+            <div class="sensors-info">
+                <div class="sensor-item">
+                    <div class="sensor-label">移动状态</div>
+                    <div class="sensor-value" id="movementStatus">静止</div>
+                </div>
+                <div class="sensor-item">
+                    <div class="sensor-label">环境风险</div>
+                    <div class="sensor-value" id="riskLevel">低</div>
+                </div>
             </div>
         </div>
         
         <div class="controls">
-            <button id="startBtn">开启摄像头</button>
-            <button id="analyzeBtn" disabled>开始环境感知</button>
+            <button id="startBtn" aria-describedby="startBtnDesc">启动辅助系统</button>
+            <span id="startBtnDesc" class="sr-only">启动交通辅助系统，需要授权摄像头和传感器访问权限</span>
+            
+            <button id="stopBtn" disabled aria-describedby="stopBtnDesc">停止辅助系统</button>
+            <span id="stopBtnDesc" class="sr-only">停止交通辅助系统</span>
         </div>
         
-        <div class="loading" id="loading" style="display: none;">
-            <div class="spinner"></div>
-            <p>正在分析交通环境...</p>
-        </div>
-        
-        <div class="assistance-panel" id="assistancePanel" style="display: none;">
-            <h3>🚦 实时导航辅助</h3>
-            <div id="alertsContainer">
-                <!-- 警报信息会动态添加到这里 -->
+        <div class="settings-panel">
+            <div class="settings-title">辅助设置</div>
+            
+            <div class="setting-item">
+                <span>语音提示</span>
+                <label class="switch">
+                    <input type="checkbox" id="voiceToggle" checked>
+                    <span class="slider"></span>
+                </label>
             </div>
-            <div class="scene-info" id="sceneInfo">
-                环境分析中...
+            
+            <div class="setting-item">
+                <span>震动提醒</span>
+                <label class="switch">
+                    <input type="checkbox" id="vibrationToggle" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            
+            <div class="setting-item">
+                <span>详细模式</span>
+                <label class="switch">
+                    <input type="checkbox" id="detailedModeToggle">
+                    <span class="slider"></span>
+                </label>
             </div>
         </div>
         
-        <footer>
-            <p>智慧交通辅助系统 | 为视障人士和老年人设计</p>
-        </footer>
-    </div>
+        <div class="debug-info" id="debugInfo">
+            <!-- 调试信息将在这里显示 -->
+        </div>
+    </main>
+    
+    <footer>
+        <p>智慧交通辅助系统 | 专为视障人士设计</p>
+    </footer>
 
     <script>
-        // DOM元素
-        const video = document.getElementById('video');
-        const cameraOverlay = document.getElementById('cameraOverlay');
+        // 主要DOM元素
         const startBtn = document.getElementById('startBtn');
-        const analyzeBtn = document.getElementById('analyzeBtn');
-        const loading = document.getElementById('loading');
-        const assistancePanel = document.getElementById('assistancePanel');
-        const alertsContainer = document.getElementById('alertsContainer');
-        const sceneInfo = document.getElementById('sceneInfo');
-        
-        let model = null;
-        let stream = null;
-        let isAnalyzing = false;
+        const stopBtn = document.getElementById('stopBtn');
+        const statusCard = document.getElementById('statusCard');
+        const statusIcon = document.getElementById('statusIcon');
+        const statusText = document.getElementById('statusText');
+        const statusDescription = document.getElementById('statusDescription');
+        const detectedObjects = document.getElementById('detectedObjects');
+        const movementStatus = document.getElementById('movementStatus');
+        const riskLevel = document.getElementById('riskLevel');
+        const debugInfo = document.getElementById('debugInfo');
+        const voiceToggle = document.getElementById('voiceToggle');
+        const vibrationToggle = document.getElementById('vibrationToggle');
+        const detailedModeToggle = document.getElementById('detailedModeToggle');
+
+        // 系统状态变量
+        let isSystemActive = false;
+        let aiModel = null;
+        let cameraStream = null;
         let analysisInterval = null;
+        let lastVibrationTime = 0;
+        let movementHistory = [];
+        let riskHistory = [];
         
-        // 开启摄像头
+        // 传感器数据
+        let sensorData = {
+            acceleration: { x: 0, y: 0, z: 0 },
+            orientation: { alpha: 0, beta: 0, gamma: 0 },
+            movement: 'stationary'
+        };
+
+        // 启动系统
         startBtn.addEventListener('click', async () => {
             try {
                 startBtn.disabled = true;
-                startBtn.textContent = '开启中...';
-                cameraOverlay.textContent = '正在请求摄像头权限...';
+                startBtn.textContent = '启动中...';
+                updateStatus('正在加载AI模型...', '👁️', 'info');
                 
-                stream = await navigator.mediaDevices.getUserMedia({ 
+                // 加载AI模型
+                aiModel = await cocoSsd.load();
+                
+                // 请求摄像头权限
+                updateStatus('请求摄像头权限...', '📷', 'info');
+                cameraStream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: 'environment' } 
                 });
                 
-                video.srcObject = stream;
-                cameraOverlay.style.display = 'none';
-                startBtn.textContent = '摄像头已开启';
-                analyzeBtn.disabled = false;
+                // 初始化传感器
+                await initializeSensors();
                 
-                // 加载AI模型
-                loading.style.display = 'block';
-                model = await cocoSsd.load();
-                loading.style.display = 'none';
+                // 开始环境分析
+                startEnvironmentAnalysis();
                 
-            } catch (err) {
-                alert('无法访问摄像头: ' + err.message);
+                // 更新UI
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                isSystemActive = true;
+                
+                updateStatus('系统运行中', '✅', 'safe');
+                speak('交通辅助系统已启动');
+                
+            } catch (error) {
+                console.error('启动失败:', error);
+                updateStatus('启动失败', '❌', 'danger');
                 startBtn.disabled = false;
-                startBtn.textContent = '开启摄像头';
+                startBtn.textContent = '启动辅助系统';
+                speak('系统启动失败，请检查权限设置');
             }
         });
         
-        // 开始/停止环境感知
-        analyzeBtn.addEventListener('click', () => {
-            if (!isAnalyzing) {
-                // 开始分析
-                isAnalyzing = true;
-                analyzeBtn.textContent = '停止感知';
-                assistancePanel.style.display = 'block';
-                analyzeEnvironment();
-                analysisInterval = setInterval(analyzeEnvironment, 2000); // 每2秒分析一次
+        // 停止系统
+        stopBtn.addEventListener('click', () => {
+            stopSystem();
+        });
+        
+        // 初始化传感器
+        async function initializeSensors() {
+            // 检查设备方向API
+            if (window.DeviceOrientationEvent) {
+                window.addEventListener('deviceorientation', handleOrientation);
             } else {
-                // 停止分析
-                isAnalyzing = false;
-                analyzeBtn.textContent = '开始环境感知';
-                clearInterval(analysisInterval);
-                alertsContainer.innerHTML = '';
-                sceneInfo.textContent = '环境感知已停止';
+                debugInfo.textContent = '设备不支持方向传感器';
             }
-        });
+            
+            // 检查设备运动API
+            if (window.DeviceMotionEvent) {
+                window.addEventListener('devicemotion', handleMotion);
+            } else {
+                debugInfo.textContent = '设备不支持运动传感器';
+            }
+            
+            // 尝试获取地理位置
+            if (navigator.geolocation) {
+                navigator.geolocation.watchPosition(
+                    handlePosition,
+                    positionError,
+                    { enableHighAccuracy: true, maximumAge: 10000 }
+                );
+            }
+        }
         
-        // 分析环境函数
+        // 处理设备方向变化
+        function handleOrientation(event) {
+            sensorData.orientation = {
+                alpha: event.alpha, // 绕Z轴旋转 (0-360)
+                beta: event.beta,   // 绕X轴旋转 (-180 to 180)
+                gamma: event.gamma  // 绕Y轴旋转 (-90 to 90)
+            };
+        }
+        
+        // 处理设备运动
+        function handleMotion(event) {
+            const acc = event.accelerationIncludingGravity;
+            if (acc) {
+                sensorData.acceleration = {
+                    x: acc.x || 0,
+                    y: acc.y || 0,
+                    z: acc.z || 0
+                };
+                
+                // 计算运动强度
+                const motionIntensity = Math.sqrt(
+                    Math.pow(acc.x, 2) + 
+                    Math.pow(acc.y, 2) + 
+                    Math.pow(acc.z, 2)
+                );
+                
+                // 更新移动状态
+                updateMovementStatus(motionIntensity);
+            }
+        }
+        
+        // 处理地理位置
+        function handlePosition(position) {
+            // 可以在这里集成地图服务，提供更精确的定位信息
+            debugInfo.textContent = `位置: ${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`;
+        }
+        
+        function positionError(error) {
+            console.warn('地理位置获取失败:', error);
+        }
+        
+        // 更新移动状态
+        function updateMovementStatus(intensity) {
+            movementHistory.push(intensity);
+            if (movementHistory.length > 10) {
+                movementHistory.shift();
+            }
+            
+            const avgIntensity = movementHistory.reduce((a, b) => a + b, 0) / movementHistory.length;
+            
+            if (avgIntensity < 10.5) {
+                sensorData.movement = 'stationary';
+                movementStatus.textContent = '静止';
+            } else if (avgIntensity < 11.5) {
+                sensorData.movement = 'walking';
+                movementStatus.textContent = '步行';
+            } else {
+                sensorData.movement = 'moving_fast';
+                movementStatus.textContent = '快速移动';
+            }
+        }
+        
+        // 开始环境分析
+        function startEnvironmentAnalysis() {
+            // 每1.5秒分析一次环境
+            analysisInterval = setInterval(analyzeEnvironment, 1500);
+        }
+        
+        // 分析环境
         async function analyzeEnvironment() {
-            if (!model) return;
+            if (!aiModel) return;
             
             try {
-                const predictions = await model.detect(video);
-                const analysis = analyzeTrafficEnvironment(predictions);
-                displayAlerts(analysis.alerts);
-                updateSceneInfo(analysis.sceneDescription);
-            } catch (err) {
-                console.error('分析失败:', err);
+                // 创建一个隐藏的canvas来捕获视频帧
+                const video = document.createElement('video');
+                video.srcObject = cameraStream;
+                video.play();
+                
+                // 等待视频准备就绪
+                await new Promise(resolve => {
+                    video.onloadeddata = resolve;
+                });
+                
+                // 使用AI模型检测物体
+                const predictions = await aiModel.detect(video);
+                
+                // 分析环境风险
+                const riskAnalysis = analyzeRisk(predictions);
+                
+                // 更新UI
+                updateEnvironmentDisplay(predictions, riskAnalysis);
+                
+                // 根据风险级别提供反馈
+                provideFeedback(riskAnalysis);
+                
+            } catch (error) {
+                console.error('环境分析失败:', error);
             }
         }
         
-        // 分析交通环境
-        function analyzeTrafficEnvironment(predictions) {
-            const alerts = [];
-            let sceneDescription = '';
+        // 分析风险
+        function analyzeRisk(predictions) {
+            let riskScore = 0;
+            const detectedItems = [];
             
-            // 检测关键交通要素
-            const detectedObjects = predictions.map(p => p.class.toLowerCase());
-            const objectCounts = {};
-            detectedObjects.forEach(obj => {
-                objectCounts[obj] = (objectCounts[obj] || 0) + 1;
+            // 风险权重
+            const riskWeights = {
+                'person': 3,
+                'car': 8,
+                'truck': 12,
+                'bus': 10,
+                'motorcycle': 7,
+                'bicycle': 5,
+                'traffic light': -2, // 负值表示安全要素
+                'stop sign': -3,
+                'parking meter': -1,
+                'bench': -1
+            };
+            
+            // 计算风险分数
+            predictions.forEach(prediction => {
+                const className = prediction.class.toLowerCase();
+                detectedItems.push(className);
+                
+                if (riskWeights[className]) {
+                    riskScore += riskWeights[className];
+                }
             });
             
-            // 分析行人环境
-            if (objectCounts['person'] > 3) {
-                alerts.push({
-                    type: 'warning',
-                    icon: '🚶',
-                    message: '前方行人密集，请小心通行'
-                });
+            // 考虑移动状态
+            if (sensorData.movement === 'moving_fast') {
+                riskScore += 5;
             }
             
-            // 分析车辆环境
-            const vehicles = ['car', 'truck', 'bus', 'motorcycle', 'bicycle'];
-            const vehicleCount = vehicles.reduce((count, vehicle) => {
-                return count + (objectCounts[vehicle] || 0);
-            }, 0);
+            // 限制风险分数范围
+            riskScore = Math.max(0, Math.min(100, riskScore + 50));
             
-            if (vehicleCount > 2) {
-                alerts.push({
-                    type: 'warning',
-                    icon: '🚗',
-                    message: '周围车辆较多，注意交通安全'
-                });
-            }
+            // 确定风险级别
+            let riskLevel, riskDescription;
             
-            // 分析交通设施
-            if (objectCounts['traffic light']) {
-                alerts.push({
-                    type: 'info',
-                    icon: '🚥',
-                    message: '前方有交通信号灯，请遵守交通规则'
-                });
-            }
-            
-            if (objectCounts['stop sign']) {
-                alerts.push({
-                    type: 'danger',
-                    icon: '🛑',
-                    message: '停止标志！请在此处停车观察'
-                });
-            }
-            
-            // 分析道路类型
-            if (objectCounts['car'] && !objectCounts['person']) {
-                sceneDescription = '您似乎位于车行道，请注意来往车辆';
-            } else if (objectCounts['person'] > objectCounts['car']) {
-                sceneDescription = '您似乎位于人行区域，相对安全';
+            if (riskScore < 30) {
+                riskLevel = 'low';
+                riskDescription = '环境安全';
+            } else if (riskScore < 60) {
+                riskLevel = 'medium';
+                riskDescription = '注意周围环境';
             } else {
-                sceneDescription = '正在分析您所处的交通环境...';
+                riskLevel = 'high';
+                riskDescription = '高风险环境，请小心';
             }
             
-            // 特殊场景检测
-            if (objectCounts['bus']) {
-                alerts.push({
-                    type: 'info',
-                    icon: '🚌',
-                    message: '附近有公交车站，注意上下车乘客'
-                });
+            // 更新风险历史
+            riskHistory.push(riskLevel);
+            if (riskHistory.length > 5) {
+                riskHistory.shift();
             }
             
-            if (objectCounts['truck']) {
-                alerts.push({
-                    type: 'danger',
-                    icon: '🚛',
-                    message: '附近有大型货车，请保持安全距离'
-                });
-            }
-            
-            return { alerts, sceneDescription };
+            return {
+                score: riskScore,
+                level: riskLevel,
+                description: riskDescription,
+                items: detectedItems
+            };
         }
         
-        // 显示警报
-        function displayAlerts(alerts) {
-            alertsContainer.innerHTML = '';
+        // 更新环境显示
+        function updateEnvironmentDisplay(predictions, riskAnalysis) {
+            // 更新风险级别显示
+            riskLevel.textContent = 
+                riskAnalysis.level === 'low' ? '低' : 
+                riskAnalysis.level === 'medium' ? '中' : '高';
             
-            if (alerts.length === 0) {
-                alertsContainer.innerHTML = `
-                    <div class="alert-item info">
-                        <span class="alert-icon">✅</span>
-                        <span>当前环境相对安全，请正常通行</span>
-                    </div>
-                `;
-                return;
+            // 更新状态卡片
+            statusCard.className = `status-card ${riskAnalysis.level}`;
+            
+            if (riskAnalysis.level === 'low') {
+                statusIcon.textContent = '✅';
+                statusText.textContent = '环境安全';
+                statusDescription.textContent = riskAnalysis.description;
+            } else if (riskAnalysis.level === 'medium') {
+                statusIcon.textContent = '⚠️';
+                statusText.textContent = '注意安全';
+                statusDescription.textContent = riskAnalysis.description;
+            } else {
+                statusIcon.textContent = '🚨';
+                statusText.textContent = '高风险';
+                statusDescription.textContent = riskAnalysis.description;
             }
             
-            alerts.forEach(alert => {
-                const alertElement = document.createElement('div');
-                alertElement.className = `alert-item ${alert.type}`;
-                alertElement.innerHTML = `
-                    <span class="alert-icon">${alert.icon}</span>
-                    <span>${alert.message}</span>
-                `;
-                alertsContainer.appendChild(alertElement);
+            // 显示检测到的物体
+            detectedObjects.innerHTML = '';
+            const uniqueItems = [...new Set(predictions.map(p => p.class))];
+            
+            uniqueItems.slice(0, 5).forEach(item => {
+                const tag = document.createElement('div');
+                tag.className = 'object-tag';
+                tag.textContent = item;
+                detectedObjects.appendChild(tag);
             });
+            
+            if (uniqueItems.length === 0) {
+                const noObjects = document.createElement('div');
+                noObjects.className = 'object-tag';
+                noObjects.textContent = '未检测到物体';
+                detectedObjects.appendChild(noObjects);
+            }
         }
         
-        // 更新场景信息
-        function updateSceneInfo(info) {
-            sceneInfo.textContent = info;
+        // 提供反馈
+        function provideFeedback(riskAnalysis) {
+            const now = Date.now();
+            
+            // 语音反馈
+            if (voiceToggle.checked && now - lastVibrationTime > 3000) {
+                let message = '';
+                
+                if (riskAnalysis.level === 'high') {
+                    message = '警告！高风险环境，请停止移动';
+                } else if (riskAnalysis.level === 'medium') {
+                    message = '注意周围环境，请小心通行';
+                } else if (Math.random() < 0.1) { // 偶尔播报安全状态
+                    message = '环境安全，可以继续通行';
+                }
+                
+                if (message) {
+                    speak(message);
+                }
+            }
+            
+            // 震动反馈
+            if (vibrationToggle.checked && now - lastVibrationTime > 5000) {
+                if (riskAnalysis.level === 'high') {
+                    navigator.vibrate([200, 100, 200, 100, 200]);
+                    lastVibrationTime = now;
+                } else if (riskAnalysis.level === 'medium' && sensorData.movement === 'moving_fast') {
+                    navigator.vibrate([300]);
+                    lastVibrationTime = now;
+                }
+            }
         }
+        
+        // 语音合成
+        function speak(text) {
+            if ('speechSynthesis' in window && voiceToggle.checked) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'zh-CN';
+                utterance.rate = 0.9;
+                utterance.pitch = 1;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+        
+        // 更新状态
+        function updateStatus(text, icon, type) {
+            statusText.textContent = text;
+            statusIcon.textContent = icon;
+            
+            statusCard.className = `status-card ${type}`;
+        }
+        
+        // 停止系统
+        function stopSystem() {
+            if (analysisInterval) {
+                clearInterval(analysisInterval);
+            }
+            
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+            }
+            
+            // 移除传感器监听器
+            window.removeEventListener('deviceorientation', handleOrientation);
+            window.removeEventListener('devicemotion', handleMotion);
+            
+            // 更新UI
+            startBtn.disabled = false;
+            startBtn.textContent = '启动辅助系统';
+            stopBtn.disabled = true;
+            isSystemActive = false;
+            
+            updateStatus('系统已停止', '⏹️', 'info');
+            speak('交通辅助系统已停止');
+        }
+        
+        // 页面卸载时停止系统
+        window.addEventListener('beforeunload', () => {
+            if (isSystemActive) {
+                stopSystem();
+            }
+        });
+        
+        // 初始语音提示
+        setTimeout(() => {
+            speak('交通辅助系统已加载完成，点击启动按钮开始使用');
+        }, 1000);
     </script>
 </body>
 </html>
