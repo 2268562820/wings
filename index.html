@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>交通辅助系统 - 基础版</title>
+    <title>交通辅助系统 - 增强版</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <style>
@@ -44,6 +44,77 @@
         .warning { background: #fff3cd; color: #856404; }
         .danger { background: #f8d7da; color: #721c24; }
         .objects { margin-top: 15px; }
+        .settings { 
+            margin-top: 20px; 
+            padding-top: 15px;
+            border-top: 1px solid #ddd;
+        }
+        .setting-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 10px 0;
+        }
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #007bff;
+        }
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+        .sensor-data {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .sensor-item {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .sensor-label {
+            font-size: 0.8rem;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        .sensor-value {
+            font-size: 1rem;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -55,9 +126,55 @@
         
         <div id="status" class="status">准备就绪</div>
         
+        <!-- 传感器数据显示 - 新增代码开始 -->
+        <div class="sensor-data">
+            <div class="sensor-item">
+                <div class="sensor-label">移动状态</div>
+                <div class="sensor-value" id="movementStatus">静止</div>
+            </div>
+            <div class="sensor-item">
+                <div class="sensor-label">设备方向</div>
+                <div class="sensor-value" id="orientationStatus">水平</div>
+            </div>
+            <div class="sensor-item">
+                <div class="sensor-label">障碍物风险</div>
+                <div class="sensor-value" id="obstacleRisk">低</div>
+            </div>
+            <div class="sensor-item">
+                <div class="sensor-label">环境类型</div>
+                <div class="sensor-value" id="environmentType">未知</div>
+            </div>
+        </div>
+        <!-- 传感器数据显示 - 新增代码结束 -->
+        
         <div class="objects">
             <h3>检测到的物体:</h3>
             <div id="objectList"></div>
+        </div>
+        
+        <div class="settings">
+            <h3>辅助设置</h3>
+            <div class="setting-item">
+                <span>语音提示</span>
+                <label class="switch">
+                    <input type="checkbox" id="voiceToggle" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="setting-item">
+                <span>震动反馈</span>
+                <label class="switch">
+                    <input type="checkbox" id="vibrationToggle" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="setting-item">
+                <span>传感器辅助</span>
+                <label class="switch">
+                    <input type="checkbox" id="sensorToggle" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
         </div>
     </div>
 
@@ -74,6 +191,34 @@
         const statusDiv = document.getElementById('status');
         const objectList = document.getElementById('objectList');
         
+        // 设置开关
+        const voiceToggle = document.getElementById('voiceToggle');
+        const vibrationToggle = document.getElementById('vibrationToggle');
+        const sensorToggle = document.getElementById('sensorToggle');
+        
+        // 震动控制变量
+        let lastVibrationTime = 0;
+        const VIBRATION_COOLDOWN = 3000; // 3秒冷却时间
+        
+        // 传感器数据变量 - 新增代码开始
+        let sensorData = {
+            acceleration: { x: 0, y: 0, z: 0 },
+            orientation: { alpha: 0, beta: 0, gamma: 0 },
+            movement: 'stationary',
+            environment: 'unknown'
+        };
+        
+        // 传感器DOM元素
+        const movementStatus = document.getElementById('movementStatus');
+        const orientationStatus = document.getElementById('orientationStatus');
+        const obstacleRisk = document.getElementById('obstacleRisk');
+        const environmentType = document.getElementById('environmentType');
+        
+        // 障碍物检测变量
+        let obstacleHistory = [];
+        let movementHistory = [];
+        // 传感器数据变量 - 新增代码结束
+        
         // 启动系统
         startBtn.addEventListener('click', async () => {
             try {
@@ -88,6 +233,9 @@
                 cameraStream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: 'environment' } 
                 });
+                
+                // 初始化传感器 - 新增代码
+                initializeSensors();
                 
                 // 开始分析
                 startAnalysis();
@@ -113,6 +261,95 @@
             updateStatus('系统已停止', 'warning');
         });
         
+        // 传感器初始化 - 新增代码开始
+        function initializeSensors() {
+            // 检查设备方向API
+            if (window.DeviceOrientationEvent) {
+                window.addEventListener('deviceorientation', handleOrientation);
+            } else {
+                console.warn('设备不支持方向传感器');
+            }
+            
+            // 检查设备运动API
+            if (window.DeviceMotionEvent) {
+                window.addEventListener('devicemotion', handleMotion);
+            } else {
+                console.warn('设备不支持运动传感器');
+            }
+        }
+        
+        // 处理设备方向变化
+        function handleOrientation(event) {
+            if (!sensorToggle.checked) return;
+            
+            sensorData.orientation = {
+                alpha: event.alpha || 0, // 绕Z轴旋转 (0-360)
+                beta: event.beta || 0,   // 绕X轴旋转 (-180 to 180)
+                gamma: event.gamma || 0  // 绕Y轴旋转 (-90 to 90)
+            };
+            
+            // 更新方向显示
+            updateOrientationDisplay();
+        }
+        
+        // 处理设备运动
+        function handleMotion(event) {
+            if (!sensorToggle.checked) return;
+            
+            const acc = event.accelerationIncludingGravity;
+            if (acc) {
+                sensorData.acceleration = {
+                    x: acc.x || 0,
+                    y: acc.y || 0,
+                    z: acc.z || 0
+                };
+                
+                // 更新移动状态
+                updateMovementStatus();
+            }
+        }
+        
+        // 更新方向显示
+        function updateOrientationDisplay() {
+            const beta = sensorData.orientation.beta;
+            let orientationText = '水平';
+            
+            if (beta > 45) {
+                orientationText = '向下倾斜';
+            } else if (beta < -45) {
+                orientationText = '向上倾斜';
+            } else if (Math.abs(sensorData.orientation.gamma) > 60) {
+                orientationText = '横向';
+            }
+            
+            orientationStatus.textContent = orientationText;
+        }
+        
+        // 更新移动状态
+        function updateMovementStatus() {
+            const acc = sensorData.acceleration;
+            const intensity = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
+            
+            movementHistory.push(intensity);
+            if (movementHistory.length > 10) {
+                movementHistory.shift();
+            }
+            
+            const avgIntensity = movementHistory.reduce((a, b) => a + b, 0) / movementHistory.length;
+            
+            if (avgIntensity < 10.5) {
+                sensorData.movement = 'stationary';
+                movementStatus.textContent = '静止';
+            } else if (avgIntensity < 11.5) {
+                sensorData.movement = 'walking';
+                movementStatus.textContent = '步行';
+            } else {
+                sensorData.movement = 'moving_fast';
+                movementStatus.textContent = '快速移动';
+            }
+        }
+        // 传感器初始化 - 新增代码结束
+        
         // 开始环境分析
         function startAnalysis() {
             analysisInterval = setInterval(async () => {
@@ -132,6 +369,16 @@
                     // 显示结果
                     displayObjects(predictions);
                     
+                    // 障碍物检测 - 新增代码
+                    const obstacleAnalysis = analyzeObstacles(predictions);
+                    updateObstacleDisplay(obstacleAnalysis);
+                    
+                    // 语音提示
+                    speakDirection(predictions, obstacleAnalysis);
+                    
+                    // 震动反馈
+                    triggerVibration(predictions, obstacleAnalysis);
+                    
                 } catch (error) {
                     console.error('分析失败:', error);
                 }
@@ -144,6 +391,10 @@
             if (cameraStream) {
                 cameraStream.getTracks().forEach(track => track.stop());
             }
+            
+            // 移除传感器监听器 - 新增代码
+            window.removeEventListener('deviceorientation', handleOrientation);
+            window.removeEventListener('devicemotion', handleMotion);
         }
         
         // 显示检测到的物体
@@ -155,11 +406,225 @@
                 return;
             }
             
+            // 精确方向感知
+            const frameWidth = 640; // 假设的视频宽度
+            const frameHeight = 480; // 假设的视频高度
+            
+            // 分析每个物体的精确位置
             predictions.forEach(pred => {
+                const bbox = pred.bbox; // [x, y, width, height]
+                const centerX = bbox[0] + bbox[2] / 2;
+                const centerY = bbox[1] + bbox[3] / 2;
+                
+                // 计算水平位置
+                let horizontalPos;
+                if (centerX < frameWidth * 0.33) {
+                    horizontalPos = "左侧";
+                } else if (centerX < frameWidth * 0.66) {
+                    horizontalPos = "中间";
+                } else {
+                    horizontalPos = "右侧";
+                }
+                
+                // 计算距离（基于物体大小）
+                const objectArea = bbox[2] * bbox[3];
+                const frameArea = frameWidth * frameHeight;
+                const coverage = objectArea / frameArea;
+                
+                let distance;
+                if (coverage < 0.05) {
+                    distance = "远处";
+                } else if (coverage < 0.15) {
+                    distance = "中距离";
+                } else {
+                    distance = "近距离";
+                }
+                
+                // 将位置信息添加到显示中
                 const item = document.createElement('div');
-                item.textContent = `${pred.class} (${Math.round(pred.score * 100)}%)`;
+                item.textContent = `${horizontalPos}${distance} ${pred.class} (${Math.round(pred.score * 100)}%)`;
                 objectList.appendChild(item);
             });
+        }
+        
+        // 障碍物检测和分析 - 新增代码开始
+        function analyzeObstacles(predictions) {
+            let obstacleRiskLevel = 'low';
+            let environment = 'unknown';
+            let obstacleMessage = '';
+            
+            // 室内物体检测
+            const indoorObjects = ['tv', 'remote', 'keyboard', 'mouse', 'book', 'cell phone', 
+                                 'cup', 'bottle', 'chair', 'dining table', 'bed', 'toilet', 'sink'];
+            
+            // 室外物体检测
+            const outdoorObjects = ['car', 'truck', 'bus', 'motorcycle', 'bicycle', 'traffic light', 
+                                  'stop sign', 'parking meter', 'fire hydrant', 'bench'];
+            
+            // 统计物体类型
+            let indoorCount = 0;
+            let outdoorCount = 0;
+            let largeObjects = 0;
+            
+            predictions.forEach(pred => {
+                const className = pred.class.toLowerCase();
+                const bbox = pred.bbox;
+                const objectArea = bbox[2] * bbox[3];
+                
+                if (indoorObjects.includes(className)) {
+                    indoorCount++;
+                }
+                
+                if (outdoorObjects.includes(className)) {
+                    outdoorCount++;
+                }
+                
+                // 检测大物体（可能为墙壁或障碍物）
+                if (objectArea > 0.2 * 640 * 480) { // 面积超过画面20%
+                    largeObjects++;
+                }
+            });
+            
+            // 环境类型判断
+            if (indoorCount > outdoorCount && indoorCount >= 2) {
+                environment = 'indoor';
+                environmentType.textContent = '室内';
+                obstacleRiskLevel = 'high';
+                obstacleMessage = '检测到室内环境，可能存在墙壁等障碍物';
+            } else if (outdoorCount > indoorCount && outdoorCount >= 2) {
+                environment = 'outdoor';
+                environmentType.textContent = '室外';
+                obstacleRiskLevel = 'medium';
+            } else {
+                environment = 'unknown';
+                environmentType.textContent = '未知';
+            }
+            
+            // 基于传感器数据的障碍物检测
+            if (sensorToggle.checked) {
+                // 如果设备向前倾斜且检测到大物体，可能是墙壁
+                if (sensorData.orientation.beta > 30 && largeObjects > 0) {
+                    obstacleRiskLevel = 'high';
+                    obstacleMessage = '前方可能有大面积障碍物';
+                }
+                
+                // 如果设备向上倾斜且快速移动，可能是楼梯
+                if (sensorData.orientation.beta < -30 && sensorData.movement === 'walking') {
+                    obstacleRiskLevel = 'high';
+                    obstacleMessage = '可能正在上楼梯，请小心';
+                }
+            }
+            
+            // 更新障碍物历史
+            obstacleHistory.push(obstacleRiskLevel);
+            if (obstacleHistory.length > 5) {
+                obstacleHistory.shift();
+            }
+            
+            return {
+                risk: obstacleRiskLevel,
+                environment: environment,
+                message: obstacleMessage,
+                indoorCount: indoorCount,
+                outdoorCount: outdoorCount,
+                largeObjects: largeObjects
+            };
+        }
+        
+        // 更新障碍物显示
+        function updateObstacleDisplay(analysis) {
+            obstacleRisk.textContent = 
+                analysis.risk === 'low' ? '低' : 
+                analysis.risk === 'medium' ? '中' : '高';
+                
+            obstacleRisk.className = 'sensor-value ' + 
+                (analysis.risk === 'high' ? 'danger' : 
+                 analysis.risk === 'medium' ? 'warning' : 'safe');
+        }
+        // 障碍物检测和分析 - 新增代码结束
+        
+        // 语音提示功能
+        function speakDirection(predictions, obstacleAnalysis) {
+            if (!predictions || predictions.length === 0 || !voiceToggle.checked) return;
+            
+            // 优先播报障碍物警告
+            if (obstacleAnalysis.risk === 'high' && obstacleAnalysis.message) {
+                speak(obstacleAnalysis.message);
+                return;
+            }
+            
+            // 获取最重要的物体（最大或最接近的）
+            const mainObject = predictions.reduce((prev, current) => {
+                const prevArea = prev.bbox[2] * prev.bbox[3];
+                const currentArea = current.bbox[2] * current.bbox[3];
+                return currentArea > prevArea ? current : prev;
+            });
+            
+            const bbox = mainObject.bbox;
+            const centerX = bbox[0] + bbox[2] / 2;
+            const frameWidth = 640; // 应与上面保持一致
+            
+            // 生成语音提示
+            let direction;
+            if (centerX < frameWidth * 0.33) {
+                direction = "左侧";
+            } else if (centerX < frameWidth * 0.66) {
+                direction = "前方";
+            } else {
+                direction = "右侧";
+            }
+            
+            const message = `${direction}检测到${mainObject.class}`;
+            speak(message);
+        }
+        
+        // 震动反馈功能
+        function triggerVibration(predictions, obstacleAnalysis) {
+            if (!predictions || predictions.length === 0 || !vibrationToggle.checked) return;
+            
+            // 检查冷却时间
+            const now = Date.now();
+            if (now - lastVibrationTime < VIBRATION_COOLDOWN) return;
+            
+            // 高风险物体列表
+            const highRiskObjects = ['car', 'truck', 'bus', 'motorcycle'];
+            
+            // 检查是否有高风险物体在近距离
+            const hasHighRisk = predictions.some(pred => {
+                if (!highRiskObjects.includes(pred.class.toLowerCase())) return false;
+                
+                // 计算物体大小占比
+                const bbox = pred.bbox;
+                const objectArea = bbox[2] * bbox[3];
+                const frameArea = 640 * 480; // 假设的帧面积
+                const coverage = objectArea / frameArea;
+                
+                // 如果物体覆盖面积超过10%，认为是近距离
+                return coverage > 0.1;
+            });
+            
+            // 检查障碍物风险
+            const hasObstacleRisk = obstacleAnalysis.risk === 'high';
+            
+            // 如果有高风险物体或障碍物风险，触发震动
+            if (hasHighRisk || hasObstacleRisk) {
+                // 检查浏览器是否支持震动API
+                if (navigator.vibrate) {
+                    // 震动模式：短-短-长，表示紧急情况
+                    navigator.vibrate([200, 100, 200, 100, 400]);
+                    lastVibrationTime = now;
+                }
+            }
+        }
+        
+        // 语音合成辅助函数
+        function speak(text) {
+            if ('speechSynthesis' in window && voiceToggle.checked) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'zh-CN';
+                utterance.rate = 0.9;
+                window.speechSynthesis.speak(utterance);
+            }
         }
         
         // 更新状态显示
