@@ -115,6 +115,15 @@
             font-size: 1rem;
             font-weight: bold;
         }
+        .emergency-alert {
+            background: #ff4444;
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            text-align: center;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -124,9 +133,14 @@
         <button id="startBtn">启动系统</button>
         <button id="stopBtn" disabled>停止系统</button>
         
+        <!-- 紧急警报 - 新增 -->
+        <div id="emergencyAlert" class="emergency-alert">
+            🚨 紧急情况！请立即停止移动！
+        </div>
+        
         <div id="status" class="status">准备就绪</div>
         
-        <!-- 传感器数据显示 - 新增代码开始 -->
+        <!-- 传感器数据显示 -->
         <div class="sensor-data">
             <div class="sensor-item">
                 <div class="sensor-label">移动状态</div>
@@ -145,7 +159,6 @@
                 <div class="sensor-value" id="environmentType">未知</div>
             </div>
         </div>
-        <!-- 传感器数据显示 - 新增代码结束 -->
         
         <div class="objects">
             <h3>检测到的物体:</h3>
@@ -179,6 +192,21 @@
     </div>
 
     <script>
+        // 常量定义 - 优化：提取魔法数字为常量
+        const FRAME_WIDTH = 640;
+        const FRAME_HEIGHT = 480;
+        const VIBRATION_COOLDOWN = 3000;
+        const ANALYSIS_INTERVAL = 2000;
+        const MOVEMENT_HISTORY_SIZE = 10;
+        const OBSTACLE_HISTORY_SIZE = 5;
+        
+        // 高风险物体列表 - 优化：提取为常量
+        const HIGH_RISK_OBJECTS = ['car', 'truck', 'bus', 'motorcycle'];
+        const INDOOR_OBJECTS = ['tv', 'remote', 'keyboard', 'mouse', 'book', 'cell phone', 
+                               'cup', 'bottle', 'chair', 'dining table', 'bed', 'toilet', 'sink'];
+        const OUTDOOR_OBJECTS = ['car', 'truck', 'bus', 'motorcycle', 'bicycle', 'traffic light', 
+                                'stop sign', 'parking meter', 'fire hydrant', 'bench'];
+
         // 基础系统变量
         let isRunning = false;
         let aiModel = null;
@@ -190,23 +218,12 @@
         const stopBtn = document.getElementById('stopBtn');
         const statusDiv = document.getElementById('status');
         const objectList = document.getElementById('objectList');
+        const emergencyAlert = document.getElementById('emergencyAlert');
         
         // 设置开关
         const voiceToggle = document.getElementById('voiceToggle');
         const vibrationToggle = document.getElementById('vibrationToggle');
         const sensorToggle = document.getElementById('sensorToggle');
-        
-        // 震动控制变量
-        let lastVibrationTime = 0;
-        const VIBRATION_COOLDOWN = 3000; // 3秒冷却时间
-        
-        // 传感器数据变量 - 新增代码开始
-        let sensorData = {
-            acceleration: { x: 0, y: 0, z: 0 },
-            orientation: { alpha: 0, beta: 0, gamma: 0 },
-            movement: 'stationary',
-            environment: 'unknown'
-        };
         
         // 传感器DOM元素
         const movementStatus = document.getElementById('movementStatus');
@@ -214,11 +231,19 @@
         const obstacleRisk = document.getElementById('obstacleRisk');
         const environmentType = document.getElementById('environmentType');
         
-        // 障碍物检测变量
-        let obstacleHistory = [];
+        // 系统状态变量
+        let lastVibrationTime = 0;
         let movementHistory = [];
-        // 传感器数据变量 - 新增代码结束
+        let obstacleHistory = [];
         
+        // 传感器数据
+        let sensorData = {
+            acceleration: { x: 0, y: 0, z: 0 },
+            orientation: { alpha: 0, beta: 0, gamma: 0 },
+            movement: 'stationary',
+            environment: 'unknown'
+        };
+
         // 启动系统
         startBtn.addEventListener('click', async () => {
             try {
@@ -234,7 +259,7 @@
                     video: { facingMode: 'environment' } 
                 });
                 
-                // 初始化传感器 - 新增代码
+                // 初始化传感器
                 initializeSensors();
                 
                 // 开始分析
@@ -245,10 +270,16 @@
                 isRunning = true;
                 updateStatus('系统运行中', 'safe');
                 
+                // 初始语音提示 - 优化：添加启动成功提示
+                speak('交通辅助系统已启动，正在监测周围环境');
+                
             } catch (error) {
                 console.error('启动失败:', error);
                 updateStatus('启动失败: ' + error.message, 'danger');
                 startBtn.disabled = false;
+                
+                // 优化：添加语音错误提示
+                speak('系统启动失败，请检查摄像头权限设置');
             }
         });
         
@@ -259,15 +290,20 @@
             stopBtn.disabled = true;
             isRunning = false;
             updateStatus('系统已停止', 'warning');
+            
+            // 优化：添加停止提示
+            speak('交通辅助系统已停止');
         });
         
-        // 传感器初始化 - 新增代码开始
+        // 传感器初始化
         function initializeSensors() {
             // 检查设备方向API
             if (window.DeviceOrientationEvent) {
                 window.addEventListener('deviceorientation', handleOrientation);
             } else {
                 console.warn('设备不支持方向传感器');
+                // 优化：添加用户提示
+                updateStatus('设备不支持方向传感器，部分功能受限', 'warning');
             }
             
             // 检查设备运动API
@@ -275,6 +311,8 @@
                 window.addEventListener('devicemotion', handleMotion);
             } else {
                 console.warn('设备不支持运动传感器');
+                // 优化：添加用户提示
+                updateStatus('设备不支持运动传感器，部分功能受限', 'warning');
             }
         }
         
@@ -283,12 +321,11 @@
             if (!sensorToggle.checked) return;
             
             sensorData.orientation = {
-                alpha: event.alpha || 0, // 绕Z轴旋转 (0-360)
-                beta: event.beta || 0,   // 绕X轴旋转 (-180 to 180)
-                gamma: event.gamma || 0  // 绕Y轴旋转 (-90 to 90)
+                alpha: event.alpha || 0,
+                beta: event.beta || 0,
+                gamma: event.gamma || 0
             };
             
-            // 更新方向显示
             updateOrientationDisplay();
         }
         
@@ -304,7 +341,6 @@
                     z: acc.z || 0
                 };
                 
-                // 更新移动状态
                 updateMovementStatus();
             }
         }
@@ -330,8 +366,9 @@
             const acc = sensorData.acceleration;
             const intensity = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
             
+            // 优化：使用常量控制历史记录大小
             movementHistory.push(intensity);
-            if (movementHistory.length > 10) {
+            if (movementHistory.length > MOVEMENT_HISTORY_SIZE) {
                 movementHistory.shift();
             }
             
@@ -348,7 +385,6 @@
                 movementStatus.textContent = '快速移动';
             }
         }
-        // 传感器初始化 - 新增代码结束
         
         // 开始环境分析
         function startAnalysis() {
@@ -369,7 +405,7 @@
                     // 显示结果
                     displayObjects(predictions);
                     
-                    // 障碍物检测 - 新增代码
+                    // 障碍物检测
                     const obstacleAnalysis = analyzeObstacles(predictions);
                     updateObstacleDisplay(obstacleAnalysis);
                     
@@ -379,22 +415,35 @@
                     // 震动反馈
                     triggerVibration(predictions, obstacleAnalysis);
                     
+                    // 优化：紧急情况处理
+                    handleEmergencySituation(predictions, obstacleAnalysis);
+                    
                 } catch (error) {
                     console.error('分析失败:', error);
+                    // 优化：添加分析失败提示
+                    updateStatus('环境分析失败', 'warning');
                 }
-            }, 2000); // 每2秒分析一次
+            }, ANALYSIS_INTERVAL);
         }
         
         // 停止分析
         function stopAnalysis() {
-            if (analysisInterval) clearInterval(analysisInterval);
-            if (cameraStream) {
-                cameraStream.getTracks().forEach(track => track.stop());
+            if (analysisInterval) {
+                clearInterval(analysisInterval);
+                analysisInterval = null;
             }
             
-            // 移除传感器监听器 - 新增代码
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+            }
+            
+            // 移除传感器监听器
             window.removeEventListener('deviceorientation', handleOrientation);
             window.removeEventListener('devicemotion', handleMotion);
+            
+            // 优化：隐藏紧急警报
+            emergencyAlert.style.display = 'none';
         }
         
         // 显示检测到的物体
@@ -406,21 +455,17 @@
                 return;
             }
             
-            // 精确方向感知
-            const frameWidth = 640; // 假设的视频宽度
-            const frameHeight = 480; // 假设的视频高度
-            
             // 分析每个物体的精确位置
             predictions.forEach(pred => {
-                const bbox = pred.bbox; // [x, y, width, height]
+                const bbox = pred.bbox;
                 const centerX = bbox[0] + bbox[2] / 2;
                 const centerY = bbox[1] + bbox[3] / 2;
                 
                 // 计算水平位置
                 let horizontalPos;
-                if (centerX < frameWidth * 0.33) {
+                if (centerX < FRAME_WIDTH * 0.33) {
                     horizontalPos = "左侧";
-                } else if (centerX < frameWidth * 0.66) {
+                } else if (centerX < FRAME_WIDTH * 0.66) {
                     horizontalPos = "中间";
                 } else {
                     horizontalPos = "右侧";
@@ -428,7 +473,7 @@
                 
                 // 计算距离（基于物体大小）
                 const objectArea = bbox[2] * bbox[3];
-                const frameArea = frameWidth * frameHeight;
+                const frameArea = FRAME_WIDTH * FRAME_HEIGHT;
                 const coverage = objectArea / frameArea;
                 
                 let distance;
@@ -447,19 +492,11 @@
             });
         }
         
-        // 障碍物检测和分析 - 新增代码开始
+        // 障碍物检测和分析
         function analyzeObstacles(predictions) {
             let obstacleRiskLevel = 'low';
             let environment = 'unknown';
             let obstacleMessage = '';
-            
-            // 室内物体检测
-            const indoorObjects = ['tv', 'remote', 'keyboard', 'mouse', 'book', 'cell phone', 
-                                 'cup', 'bottle', 'chair', 'dining table', 'bed', 'toilet', 'sink'];
-            
-            // 室外物体检测
-            const outdoorObjects = ['car', 'truck', 'bus', 'motorcycle', 'bicycle', 'traffic light', 
-                                  'stop sign', 'parking meter', 'fire hydrant', 'bench'];
             
             // 统计物体类型
             let indoorCount = 0;
@@ -471,16 +508,16 @@
                 const bbox = pred.bbox;
                 const objectArea = bbox[2] * bbox[3];
                 
-                if (indoorObjects.includes(className)) {
+                if (INDOOR_OBJECTS.includes(className)) {
                     indoorCount++;
                 }
                 
-                if (outdoorObjects.includes(className)) {
+                if (OUTDOOR_OBJECTS.includes(className)) {
                     outdoorCount++;
                 }
                 
                 // 检测大物体（可能为墙壁或障碍物）
-                if (objectArea > 0.2 * 640 * 480) { // 面积超过画面20%
+                if (objectArea > 0.2 * FRAME_WIDTH * FRAME_HEIGHT) {
                     largeObjects++;
                 }
             });
@@ -517,7 +554,7 @@
             
             // 更新障碍物历史
             obstacleHistory.push(obstacleRiskLevel);
-            if (obstacleHistory.length > 5) {
+            if (obstacleHistory.length > OBSTACLE_HISTORY_SIZE) {
                 obstacleHistory.shift();
             }
             
@@ -541,7 +578,6 @@
                 (analysis.risk === 'high' ? 'danger' : 
                  analysis.risk === 'medium' ? 'warning' : 'safe');
         }
-        // 障碍物检测和分析 - 新增代码结束
         
         // 语音提示功能
         function speakDirection(predictions, obstacleAnalysis) {
@@ -562,13 +598,12 @@
             
             const bbox = mainObject.bbox;
             const centerX = bbox[0] + bbox[2] / 2;
-            const frameWidth = 640; // 应与上面保持一致
             
             // 生成语音提示
             let direction;
-            if (centerX < frameWidth * 0.33) {
+            if (centerX < FRAME_WIDTH * 0.33) {
                 direction = "左侧";
-            } else if (centerX < frameWidth * 0.66) {
+            } else if (centerX < FRAME_WIDTH * 0.66) {
                 direction = "前方";
             } else {
                 direction = "右侧";
@@ -586,17 +621,14 @@
             const now = Date.now();
             if (now - lastVibrationTime < VIBRATION_COOLDOWN) return;
             
-            // 高风险物体列表
-            const highRiskObjects = ['car', 'truck', 'bus', 'motorcycle'];
-            
             // 检查是否有高风险物体在近距离
             const hasHighRisk = predictions.some(pred => {
-                if (!highRiskObjects.includes(pred.class.toLowerCase())) return false;
+                if (!HIGH_RISK_OBJECTS.includes(pred.class.toLowerCase())) return false;
                 
                 // 计算物体大小占比
                 const bbox = pred.bbox;
                 const objectArea = bbox[2] * bbox[3];
-                const frameArea = 640 * 480; // 假设的帧面积
+                const frameArea = FRAME_WIDTH * FRAME_HEIGHT;
                 const coverage = objectArea / frameArea;
                 
                 // 如果物体覆盖面积超过10%，认为是近距离
@@ -617,12 +649,52 @@
             }
         }
         
+        // 紧急情况处理 - 新增功能
+        function handleEmergencySituation(predictions, obstacleAnalysis) {
+            // 检测紧急情况：高风险物体非常接近 + 用户快速移动
+            const hasImmediateDanger = predictions.some(pred => {
+                if (!HIGH_RISK_OBJECTS.includes(pred.class.toLowerCase())) return false;
+                
+                const bbox = pred.bbox;
+                const objectArea = bbox[2] * bbox[3];
+                const coverage = objectArea / (FRAME_WIDTH * FRAME_HEIGHT);
+                
+                // 物体非常大且用户快速移动
+                return coverage > 0.2 && sensorData.movement === 'moving_fast';
+            });
+            
+            if (hasImmediateDanger) {
+                // 显示紧急警报
+                emergencyAlert.style.display = 'block';
+                
+                // 强烈震动
+                if (navigator.vibrate && vibrationToggle.checked) {
+                    navigator.vibrate([500, 100, 500, 100, 500, 100, 500]);
+                }
+                
+                // 紧急语音提示
+                if (voiceToggle.checked) {
+                    speak('紧急！前方有危险，请立即停止移动！');
+                }
+                
+                // 更新状态
+                updateStatus('紧急情况！前方危险！', 'danger');
+            } else {
+                // 隐藏紧急警报
+                emergencyAlert.style.display = 'none';
+            }
+        }
+        
         // 语音合成辅助函数
         function speak(text) {
             if ('speechSynthesis' in window && voiceToggle.checked) {
+                // 优化：停止当前语音，避免重叠
+                window.speechSynthesis.cancel();
+                
                 const utterance = new SpeechSynthesisUtterance(text);
                 utterance.lang = 'zh-CN';
                 utterance.rate = 0.9;
+                utterance.volume = 1.0;
                 window.speechSynthesis.speak(utterance);
             }
         }
@@ -636,6 +708,17 @@
         // 页面卸载时清理资源
         window.addEventListener('beforeunload', () => {
             if (isRunning) stopAnalysis();
+        });
+        
+        // 优化：添加页面可见性变化处理
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && isRunning) {
+                // 页面隐藏时停止分析以节省资源
+                clearInterval(analysisInterval);
+            } else if (!document.hidden && isRunning && !analysisInterval) {
+                // 页面重新显示时恢复分析
+                startAnalysis();
+            }
         });
     </script>
 </body>
