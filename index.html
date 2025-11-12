@@ -3,744 +3,175 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TrafficLens - 视障人士交通辅助系统</title>
+    <title>交通辅助系统 - 基础版</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
     <style>
-        :root {
-            --primary-color: #1a73e8;
-            --safe-color: #34a853;
-            --warning-color: #f9ab00;
-            --danger-color: #ea4335;
-            --background-color: #f8f9fa;
-            --text-color: #202124;
-            --card-background: #ffffff;
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: Arial, sans-serif; 
+            padding: 20px; 
+            background: #f0f0f0;
         }
-        
-        @media (prefers-color-scheme: dark) {
-            :root {
-                --background-color: #202124;
-                --text-color: #e8eaed;
-                --card-background: #2d2e30;
-            }
-        }
-        
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background-color: var(--background-color);
-            color: var(--text-color);
-            line-height: 1.6;
-            padding: 16px;
-            max-width: 500px;
+        .container {
+            max-width: 400px;
             margin: 0 auto;
-        }
-        
-        header {
-            text-align: center;
-            margin-bottom: 24px;
-        }
-        
-        h1 {
-            font-size: 1.75rem;
-            margin-bottom: 8px;
-            color: var(--primary-color);
-        }
-        
-        .subtitle {
-            font-size: 1rem;
-            opacity: 0.8;
-        }
-        
-        .status-card {
-            background-color: var(--card-background);
-            border-radius: 16px;
+            background: white;
             padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            transition: all 0.3s ease;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
-        
-        .status-card.safe {
-            border-left: 6px solid var(--safe-color);
-        }
-        
-        .status-card.warning {
-            border-left: 6px solid var(--warning-color);
-        }
-        
-        .status-card.danger {
-            border-left: 6px solid var(--danger-color);
-            animation: pulse 1.5s infinite;
-        }
-        
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.02); }
-            100% { transform: scale(1); }
-        }
-        
-        .status-header {
-            display: flex;
-            align-items: center;
-            margin-bottom: 12px;
-        }
-        
-        .status-icon {
-            font-size: 2rem;
-            margin-right: 12px;
-        }
-        
-        .status-text {
-            font-size: 1.25rem;
-            font-weight: 600;
-        }
-        
-        .status-description {
-            font-size: 1rem;
-            opacity: 0.9;
-        }
-        
-        .controls {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            margin-bottom: 20px;
-        }
-        
-        button {
-            padding: 16px;
+        h1 { text-align: center; margin-bottom: 20px; }
+        button { 
+            width: 100%; 
+            padding: 15px; 
+            margin: 10px 0;
             border: none;
-            border-radius: 12px;
-            font-size: 1.1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            background-color: var(--primary-color);
+            border-radius: 5px;
+            background: #007bff;
             color: white;
-        }
-        
-        button:active {
-            transform: scale(0.98);
-        }
-        
-        button:disabled {
-            background-color: #cccccc;
-            color: #666666;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        .sensors-info {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            margin-top: 16px;
-        }
-        
-        .sensor-item {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 12px;
-            background-color: rgba(0, 0, 0, 0.05);
-            border-radius: 8px;
-        }
-        
-        .sensor-label {
-            font-size: 0.9rem;
-            opacity: 0.8;
-            margin-bottom: 4px;
-        }
-        
-        .sensor-value {
-            font-size: 1.1rem;
-            font-weight: 600;
-        }
-        
-        .detected-objects {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-top: 12px;
-        }
-        
-        .object-tag {
-            background-color: rgba(26, 115, 232, 0.1);
-            color: var(--primary-color);
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-        }
-        
-        .settings-panel {
-            margin-top: 20px;
-            padding-top: 16px;
-            border-top: 1px solid rgba(0, 0, 0, 0.1);
-        }
-        
-        .settings-title {
-            font-size: 1.1rem;
-            margin-bottom: 12px;
-            font-weight: 600;
-        }
-        
-        .setting-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 12px;
-        }
-        
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 50px;
-            height: 24px;
-        }
-        
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-        
-        .slider {
-            position: absolute;
+            font-size: 16px;
             cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #ccc;
-            transition: .4s;
-            border-radius: 24px;
         }
-        
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 16px;
-            width: 16px;
-            left: 4px;
-            bottom: 4px;
-            background-color: white;
-            transition: .4s;
-            border-radius: 50%;
-        }
-        
-        input:checked + .slider {
-            background-color: var(--primary-color);
-        }
-        
-        input:checked + .slider:before {
-            transform: translateX(26px);
-        }
-        
-        .sr-only {
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            padding: 0;
-            margin: -1px;
-            overflow: hidden;
-            clip: rect(0, 0, 0, 0);
-            white-space: nowrap;
-            border: 0;
-        }
-        
-        footer {
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .status { 
+            padding: 15px; 
+            margin: 10px 0;
+            border-radius: 5px;
             text-align: center;
-            margin-top: 30px;
-            font-size: 0.9rem;
-            opacity: 0.7;
         }
-        
-        .debug-info {
-            margin-top: 16px;
-            font-size: 0.8rem;
-            opacity: 0.6;
-        }
+        .safe { background: #d4edda; color: #155724; }
+        .warning { background: #fff3cd; color: #856404; }
+        .danger { background: #f8d7da; color: #721c24; }
+        .objects { margin-top: 15px; }
     </style>
 </head>
 <body>
-    <header>
-        <h1>TrafficLens</h1>
-        <p class="subtitle">视障人士交通辅助系统</p>
-    </header>
-    
-    <main>
-        <div class="status-card" id="statusCard">
-            <div class="status-header">
-                <div class="status-icon" id="statusIcon">👁️</div>
-                <div class="status-text" id="statusText">准备就绪</div>
-            </div>
-            <div class="status-description" id="statusDescription">
-                点击"启动辅助系统"开始使用
-            </div>
-            <div class="detected-objects" id="detectedObjects">
-                <!-- 检测到的物体将在这里显示 -->
-            </div>
-            
-            <div class="sensors-info">
-                <div class="sensor-item">
-                    <div class="sensor-label">移动状态</div>
-                    <div class="sensor-value" id="movementStatus">静止</div>
-                </div>
-                <div class="sensor-item">
-                    <div class="sensor-label">环境风险</div>
-                    <div class="sensor-value" id="riskLevel">低</div>
-                </div>
-            </div>
-        </div>
+    <div class="container">
+        <h1>交通辅助系统</h1>
         
-        <div class="controls">
-            <button id="startBtn" aria-describedby="startBtnDesc">启动辅助系统</button>
-            <span id="startBtnDesc" class="sr-only">启动交通辅助系统，需要授权摄像头和传感器访问权限</span>
-            
-            <button id="stopBtn" disabled aria-describedby="stopBtnDesc">停止辅助系统</button>
-            <span id="stopBtnDesc" class="sr-only">停止交通辅助系统</span>
-        </div>
+        <button id="startBtn">启动系统</button>
+        <button id="stopBtn" disabled>停止系统</button>
         
-        <div class="settings-panel">
-            <div class="settings-title">辅助设置</div>
-            
-            <div class="setting-item">
-                <span>语音提示</span>
-                <label class="switch">
-                    <input type="checkbox" id="voiceToggle" checked>
-                    <span class="slider"></span>
-                </label>
-            </div>
-            
-            <div class="setting-item">
-                <span>震动提醒</span>
-                <label class="switch">
-                    <input type="checkbox" id="vibrationToggle" checked>
-                    <span class="slider"></span>
-                </label>
-            </div>
-            
-            <div class="setting-item">
-                <span>详细模式</span>
-                <label class="switch">
-                    <input type="checkbox" id="detailedModeToggle">
-                    <span class="slider"></span>
-                </label>
-            </div>
-        </div>
+        <div id="status" class="status">准备就绪</div>
         
-        <div class="debug-info" id="debugInfo">
-            <!-- 调试信息将在这里显示 -->
+        <div class="objects">
+            <h3>检测到的物体:</h3>
+            <div id="objectList"></div>
         </div>
-    </main>
-    
-    <footer>
-        <p>智慧交通辅助系统 | 专为视障人士设计</p>
-    </footer>
+    </div>
 
     <script>
-        // 主要DOM元素
-        const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        const statusCard = document.getElementById('statusCard');
-        const statusIcon = document.getElementById('statusIcon');
-        const statusText = document.getElementById('statusText');
-        const statusDescription = document.getElementById('statusDescription');
-        const detectedObjects = document.getElementById('detectedObjects');
-        const movementStatus = document.getElementById('movementStatus');
-        const riskLevel = document.getElementById('riskLevel');
-        const debugInfo = document.getElementById('debugInfo');
-        const voiceToggle = document.getElementById('voiceToggle');
-        const vibrationToggle = document.getElementById('vibrationToggle');
-        const detailedModeToggle = document.getElementById('detailedModeToggle');
-
-        // 系统状态变量
-        let isSystemActive = false;
+        // 基础系统变量
+        let isRunning = false;
         let aiModel = null;
         let cameraStream = null;
         let analysisInterval = null;
-        let lastVibrationTime = 0;
-        let movementHistory = [];
-        let riskHistory = [];
         
-        // 传感器数据
-        let sensorData = {
-            acceleration: { x: 0, y: 0, z: 0 },
-            orientation: { alpha: 0, beta: 0, gamma: 0 },
-            movement: 'stationary'
-        };
-
+        // DOM元素
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusDiv = document.getElementById('status');
+        const objectList = document.getElementById('objectList');
+        
         // 启动系统
         startBtn.addEventListener('click', async () => {
             try {
                 startBtn.disabled = true;
-                startBtn.textContent = '启动中...';
-                updateStatus('正在加载AI模型...', '👁️', 'info');
+                updateStatus('正在加载AI模型...', 'warning');
                 
                 // 加载AI模型
                 aiModel = await cocoSsd.load();
                 
                 // 请求摄像头权限
-                updateStatus('请求摄像头权限...', '📷', 'info');
+                updateStatus('请求摄像头权限...', 'warning');
                 cameraStream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: 'environment' } 
                 });
                 
-                // 初始化传感器
-                await initializeSensors();
-                
-                // 开始环境分析
-                startEnvironmentAnalysis();
+                // 开始分析
+                startAnalysis();
                 
                 // 更新UI
-                startBtn.disabled = true;
                 stopBtn.disabled = false;
-                isSystemActive = true;
-                
-                updateStatus('系统运行中', '✅', 'safe');
-                speak('交通辅助系统已启动');
+                isRunning = true;
+                updateStatus('系统运行中', 'safe');
                 
             } catch (error) {
                 console.error('启动失败:', error);
-                updateStatus('启动失败', '❌', 'danger');
+                updateStatus('启动失败: ' + error.message, 'danger');
                 startBtn.disabled = false;
-                startBtn.textContent = '启动辅助系统';
-                speak('系统启动失败，请检查权限设置');
             }
         });
         
         // 停止系统
         stopBtn.addEventListener('click', () => {
-            stopSystem();
+            stopAnalysis();
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            isRunning = false;
+            updateStatus('系统已停止', 'warning');
         });
         
-        // 初始化传感器
-        async function initializeSensors() {
-            // 检查设备方向API
-            if (window.DeviceOrientationEvent) {
-                window.addEventListener('deviceorientation', handleOrientation);
-            } else {
-                debugInfo.textContent = '设备不支持方向传感器';
-            }
-            
-            // 检查设备运动API
-            if (window.DeviceMotionEvent) {
-                window.addEventListener('devicemotion', handleMotion);
-            } else {
-                debugInfo.textContent = '设备不支持运动传感器';
-            }
-            
-            // 尝试获取地理位置
-            if (navigator.geolocation) {
-                navigator.geolocation.watchPosition(
-                    handlePosition,
-                    positionError,
-                    { enableHighAccuracy: true, maximumAge: 10000 }
-                );
-            }
-        }
-        
-        // 处理设备方向变化
-        function handleOrientation(event) {
-            sensorData.orientation = {
-                alpha: event.alpha, // 绕Z轴旋转 (0-360)
-                beta: event.beta,   // 绕X轴旋转 (-180 to 180)
-                gamma: event.gamma  // 绕Y轴旋转 (-90 to 90)
-            };
-        }
-        
-        // 处理设备运动
-        function handleMotion(event) {
-            const acc = event.accelerationIncludingGravity;
-            if (acc) {
-                sensorData.acceleration = {
-                    x: acc.x || 0,
-                    y: acc.y || 0,
-                    z: acc.z || 0
-                };
-                
-                // 计算运动强度
-                const motionIntensity = Math.sqrt(
-                    Math.pow(acc.x, 2) + 
-                    Math.pow(acc.y, 2) + 
-                    Math.pow(acc.z, 2)
-                );
-                
-                // 更新移动状态
-                updateMovementStatus(motionIntensity);
-            }
-        }
-        
-        // 处理地理位置
-        function handlePosition(position) {
-            // 可以在这里集成地图服务，提供更精确的定位信息
-            debugInfo.textContent = `位置: ${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`;
-        }
-        
-        function positionError(error) {
-            console.warn('地理位置获取失败:', error);
-        }
-        
-        // 更新移动状态
-        function updateMovementStatus(intensity) {
-            movementHistory.push(intensity);
-            if (movementHistory.length > 10) {
-                movementHistory.shift();
-            }
-            
-            const avgIntensity = movementHistory.reduce((a, b) => a + b, 0) / movementHistory.length;
-            
-            if (avgIntensity < 10.5) {
-                sensorData.movement = 'stationary';
-                movementStatus.textContent = '静止';
-            } else if (avgIntensity < 11.5) {
-                sensorData.movement = 'walking';
-                movementStatus.textContent = '步行';
-            } else {
-                sensorData.movement = 'moving_fast';
-                movementStatus.textContent = '快速移动';
-            }
-        }
-        
         // 开始环境分析
-        function startEnvironmentAnalysis() {
-            // 每1.5秒分析一次环境
-            analysisInterval = setInterval(analyzeEnvironment, 1500);
-        }
-        
-        // 分析环境
-        async function analyzeEnvironment() {
-            if (!aiModel) return;
-            
-            try {
-                // 创建一个隐藏的canvas来捕获视频帧
-                const video = document.createElement('video');
-                video.srcObject = cameraStream;
-                video.play();
+        function startAnalysis() {
+            analysisInterval = setInterval(async () => {
+                if (!aiModel) return;
                 
-                // 等待视频准备就绪
-                await new Promise(resolve => {
-                    video.onloadeddata = resolve;
-                });
-                
-                // 使用AI模型检测物体
-                const predictions = await aiModel.detect(video);
-                
-                // 分析环境风险
-                const riskAnalysis = analyzeRisk(predictions);
-                
-                // 更新UI
-                updateEnvironmentDisplay(predictions, riskAnalysis);
-                
-                // 根据风险级别提供反馈
-                provideFeedback(riskAnalysis);
-                
-            } catch (error) {
-                console.error('环境分析失败:', error);
-            }
-        }
-        
-        // 分析风险
-        function analyzeRisk(predictions) {
-            let riskScore = 0;
-            const detectedItems = [];
-            
-            // 风险权重
-            const riskWeights = {
-                'person': 3,
-                'car': 8,
-                'truck': 12,
-                'bus': 10,
-                'motorcycle': 7,
-                'bicycle': 5,
-                'traffic light': -2, // 负值表示安全要素
-                'stop sign': -3,
-                'parking meter': -1,
-                'bench': -1
-            };
-            
-            // 计算风险分数
-            predictions.forEach(prediction => {
-                const className = prediction.class.toLowerCase();
-                detectedItems.push(className);
-                
-                if (riskWeights[className]) {
-                    riskScore += riskWeights[className];
+                try {
+                    // 创建临时视频元素分析画面
+                    const video = document.createElement('video');
+                    video.srcObject = cameraStream;
+                    video.play();
+                    
+                    await new Promise(resolve => video.onloadeddata = resolve);
+                    
+                    // 检测物体
+                    const predictions = await aiModel.detect(video);
+                    
+                    // 显示结果
+                    displayObjects(predictions);
+                    
+                } catch (error) {
+                    console.error('分析失败:', error);
                 }
-            });
-            
-            // 考虑移动状态
-            if (sensorData.movement === 'moving_fast') {
-                riskScore += 5;
-            }
-            
-            // 限制风险分数范围
-            riskScore = Math.max(0, Math.min(100, riskScore + 50));
-            
-            // 确定风险级别
-            let riskLevel, riskDescription;
-            
-            if (riskScore < 30) {
-                riskLevel = 'low';
-                riskDescription = '环境安全';
-            } else if (riskScore < 60) {
-                riskLevel = 'medium';
-                riskDescription = '注意周围环境';
-            } else {
-                riskLevel = 'high';
-                riskDescription = '高风险环境，请小心';
-            }
-            
-            // 更新风险历史
-            riskHistory.push(riskLevel);
-            if (riskHistory.length > 5) {
-                riskHistory.shift();
-            }
-            
-            return {
-                score: riskScore,
-                level: riskLevel,
-                description: riskDescription,
-                items: detectedItems
-            };
+            }, 2000); // 每2秒分析一次
         }
         
-        // 更新环境显示
-        function updateEnvironmentDisplay(predictions, riskAnalysis) {
-            // 更新风险级别显示
-            riskLevel.textContent = 
-                riskAnalysis.level === 'low' ? '低' : 
-                riskAnalysis.level === 'medium' ? '中' : '高';
-            
-            // 更新状态卡片
-            statusCard.className = `status-card ${riskAnalysis.level}`;
-            
-            if (riskAnalysis.level === 'low') {
-                statusIcon.textContent = '✅';
-                statusText.textContent = '环境安全';
-                statusDescription.textContent = riskAnalysis.description;
-            } else if (riskAnalysis.level === 'medium') {
-                statusIcon.textContent = '⚠️';
-                statusText.textContent = '注意安全';
-                statusDescription.textContent = riskAnalysis.description;
-            } else {
-                statusIcon.textContent = '🚨';
-                statusText.textContent = '高风险';
-                statusDescription.textContent = riskAnalysis.description;
-            }
-            
-            // 显示检测到的物体
-            detectedObjects.innerHTML = '';
-            const uniqueItems = [...new Set(predictions.map(p => p.class))];
-            
-            uniqueItems.slice(0, 5).forEach(item => {
-                const tag = document.createElement('div');
-                tag.className = 'object-tag';
-                tag.textContent = item;
-                detectedObjects.appendChild(tag);
-            });
-            
-            if (uniqueItems.length === 0) {
-                const noObjects = document.createElement('div');
-                noObjects.className = 'object-tag';
-                noObjects.textContent = '未检测到物体';
-                detectedObjects.appendChild(noObjects);
-            }
-        }
-        
-        // 提供反馈
-        function provideFeedback(riskAnalysis) {
-            const now = Date.now();
-            
-            // 语音反馈
-            if (voiceToggle.checked && now - lastVibrationTime > 3000) {
-                let message = '';
-                
-                if (riskAnalysis.level === 'high') {
-                    message = '警告！高风险环境，请停止移动';
-                } else if (riskAnalysis.level === 'medium') {
-                    message = '注意周围环境，请小心通行';
-                } else if (Math.random() < 0.1) { // 偶尔播报安全状态
-                    message = '环境安全，可以继续通行';
-                }
-                
-                if (message) {
-                    speak(message);
-                }
-            }
-            
-            // 震动反馈
-            if (vibrationToggle.checked && now - lastVibrationTime > 5000) {
-                if (riskAnalysis.level === 'high') {
-                    navigator.vibrate([200, 100, 200, 100, 200]);
-                    lastVibrationTime = now;
-                } else if (riskAnalysis.level === 'medium' && sensorData.movement === 'moving_fast') {
-                    navigator.vibrate([300]);
-                    lastVibrationTime = now;
-                }
-            }
-        }
-        
-        // 语音合成
-        function speak(text) {
-            if ('speechSynthesis' in window && voiceToggle.checked) {
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.lang = 'zh-CN';
-                utterance.rate = 0.9;
-                utterance.pitch = 1;
-                window.speechSynthesis.speak(utterance);
-            }
-        }
-        
-        // 更新状态
-        function updateStatus(text, icon, type) {
-            statusText.textContent = text;
-            statusIcon.textContent = icon;
-            
-            statusCard.className = `status-card ${type}`;
-        }
-        
-        // 停止系统
-        function stopSystem() {
-            if (analysisInterval) {
-                clearInterval(analysisInterval);
-            }
-            
+        // 停止分析
+        function stopAnalysis() {
+            if (analysisInterval) clearInterval(analysisInterval);
             if (cameraStream) {
                 cameraStream.getTracks().forEach(track => track.stop());
             }
-            
-            // 移除传感器监听器
-            window.removeEventListener('deviceorientation', handleOrientation);
-            window.removeEventListener('devicemotion', handleMotion);
-            
-            // 更新UI
-            startBtn.disabled = false;
-            startBtn.textContent = '启动辅助系统';
-            stopBtn.disabled = true;
-            isSystemActive = false;
-            
-            updateStatus('系统已停止', '⏹️', 'info');
-            speak('交通辅助系统已停止');
         }
         
-        // 页面卸载时停止系统
-        window.addEventListener('beforeunload', () => {
-            if (isSystemActive) {
-                stopSystem();
+        // 显示检测到的物体
+        function displayObjects(predictions) {
+            objectList.innerHTML = '';
+            
+            if (predictions.length === 0) {
+                objectList.innerHTML = '<p>未检测到物体</p>';
+                return;
             }
-        });
+            
+            predictions.forEach(pred => {
+                const item = document.createElement('div');
+                item.textContent = `${pred.class} (${Math.round(pred.score * 100)}%)`;
+                objectList.appendChild(item);
+            });
+        }
         
-        // 初始语音提示
-        setTimeout(() => {
-            speak('交通辅助系统已加载完成，点击启动按钮开始使用');
-        }, 1000);
+        // 更新状态显示
+        function updateStatus(message, type) {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+        }
+        
+        // 页面卸载时清理资源
+        window.addEventListener('beforeunload', () => {
+            if (isRunning) stopAnalysis();
+        });
     </script>
 </body>
 </html>
