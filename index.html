@@ -7,18 +7,18 @@
   <style>
     body { font-family: Arial; text-align: center; padding: 20px; background: #f0f8ff; }
     h1 { color: #007acc; }
-    #status { font-size: 18px; margin: 20px; }
-    #log { margin: 20px; font-size: 16px; text-align: left; max-width: 90%; margin: 0 auto; }
-    .ai { color: #007acc; }
-    .user { color: #333; }
+    #status { font-size: 18px; margin: 20px; color: #555; }
+    #log { margin: 20px auto; max-width: 90%; text-align: left; border: 1px solid #ddd; padding: 10px; border-radius: 8px; max-height: 400px; overflow-y: auto; background: white; }
+    .user { color: #333; margin: 8px 0; }
+    .ai { color: #007acc; margin: 8px 0; font-weight: bold; }
     #nav { margin: 20px; }
-    .btn { padding: 12px 24px; font-size: 18px; background: #007acc; color: white; text-decoration: none; border-radius: 8px; }
+    .btn { padding: 12px 24px; font-size: 18px; background: #007acc; color: white; text-decoration: none; border-radius: 8px; display: inline-block; }
   </style>
 </head>
 <body>
   <h1>VoiceMood Live</h1>
-  <p>说“开始测试”或“去湖边”，我实时陪你</p>
-  <div id="status">正在监听...</div>
+  <p>说“开始测试”或“去湖边”，我会实时陪你</p>
+  <div id="status">正在启动语音引擎...</div>
   <div id="log"></div>
   <div id="nav"></div>
 
@@ -28,19 +28,33 @@
 
     const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
     recognition.lang = 'zh-CN';
-    recognition.continuous = true;  // 持续监听
-    recognition.interimResults = true; // 实时中间结果
+    recognition.continuous = true;
+    recognition.interimResults = true;
 
     const status = document.getElementById('status');
-    const log = document.getElementById('log');
+    const log = document.getElementById Lance('log');
     const nav = document.getElementById('nav');
     const synth = window.speechSynthesis;
 
     let finalTranscript = '';
     let isThinking = false;
 
-    // 关键词触发
-    const TRIGGER_WORDS = ['开始测试', '去湖边', '好累', '导航', '去哪', '难受', '冷静', '开车', '助手'];
+    const TRIGGER_WORDS = ['开始测试', '去湖边', '好累', '导航', '去哪', '难受', '冷静', '开车', '助手', '帮我', '我想去'];
+
+    // 添加对话（带时间戳）
+    function addLog(speaker, text) {
+      const time = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+      const div = document.createElement('div');
+      div.className = speaker === 'AI' ? 'ai' : 'user';
+      div.innerHTML = `<small>${time}</small> <strong>${speaker}：</strong>${text}`;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    recognition.onstart = () => {
+      status.innerText = '实时监听中...';
+      addLog('系统', '语音引擎已启动');
+    };
 
     recognition.onresult = async (event) => {
       let interim = '';
@@ -54,42 +68,34 @@
         }
       }
 
-      // 实时显示
       status.innerText = finalTranscript + interim;
 
-      // 检测关键词
       const fullText = (finalTranscript + interim).toLowerCase();
       if (!isThinking && TRIGGER_WORDS.some(word => fullText.includes(word))) {
         isThinking = true;
         status.innerText = 'AI 思考中...';
+        addLog('系统', '检测到关键词，调用 AI...');
+
         const reply = await callBailianAI(finalTranscript + interim);
-        addLog('AI', reply);
+        addLog('AI', reply);  // ←←← 文字显示在这里！
         speak(reply);
         extractAndNavigate(reply);
+
         isThinking = false;
-        finalTranscript = ''; // 清空，准备下一轮
+        finalTranscript = '';
       }
     };
 
-    recognition.onerror = () => {
-      status.innerText = '监听出错，重试中...';
+    recognition.onerror = (e) => {
+      status.innerText = '语音错误，重试中...';
+      addLog('系统', '语音识别出错：' + e.error);
       setTimeout(() => recognition.start(), 1000);
     };
 
-    recognition.onend = () => recognition.start(); // 自动重启
+    recognition.onend = () => recognition.start();
 
-    // 开始监听
+    // 启动
     recognition.start();
-    status.innerText = '实时监听中...';
-
-    // 添加对话
-    function addLog(speaker, text) {
-      const div = document.createElement('div');
-      div.className = speaker === 'AI' ? 'ai' : 'user';
-      div.innerHTML = `<strong>${speaker}：</strong>${text}`;
-      log.appendChild(div);
-      log.scrollTop = log.scrollHeight;
-    }
 
     // 调用阿里百炼
     async function callBailianAI(text) {
@@ -111,17 +117,20 @@
           })
         });
         const data = await response.json();
-        return data.output.choices[0].message.content;
+        return data.output.choices[0].message.content || "我在呢。";
       } catch (e) {
-        return "我在呢，别急，网络有点慢。";
+        addLog('系统', 'AI 调用失败：' + e.message);
+        return "我在呢，网络有点慢，别急。";
       }
     }
 
-    // 语音输出
+    // 语音输出 + 文字保险
     function speak(text) {
       const utter = new SpeechSynthesisUtterance(text);
       utter.lang = 'zh-CN';
       utter.rate = 0.9;
+      utter.onend = () => addLog('系统', '语音播报完成');
+      utter.onerror = () => addLog('系统', '语音播报失败');
       synth.speak(utter);
     }
 
