@@ -12,6 +12,7 @@
     .user { color: #333; margin: 8px 0; }
     .ai { color: #007acc; margin: 8px 0; font-weight: bold; }
     .system { color: #888; font-style: italic; }
+    .error { color: red; }
     #nav { margin: 20px; }
     .btn { padding: 12px 24px; font-size: 18px; background: #007acc; color: white; text-decoration: none; border-radius: 8px; display: inline-block; }
   </style>
@@ -27,11 +28,7 @@
     // === API Key 贴这里 ===
     const API_KEY = 'sk-550f45f609c5430d81ac382c31a4fccb'; // ←←← 替换这里！
 
-    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-    recognition.lang = 'zh-CN';
-    recognition.continuous = true;
-    recognition.interimResults = true;
-
+    let recognition;
     const status = document.getElementById('status');
     const log = document.getElementById('log');
     const nav = document.getElementById('nav');
@@ -46,10 +43,10 @@
     const CARE_INTERVAL = 30000; // 30秒
 
     // 添加对话
-    function addLog(speaker, text) {
+    function addLog(speaker, text, className = '') {
       const time = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
       const div = document.createElement('div');
-      div.className = speaker === 'AI' ? 'ai' : (speaker === '系统' ? 'system' : 'user');
+      div.className = className;
       div.innerHTML = `<small>${time}</small> <strong>${speaker}：</strong>${text}`;
       log.appendChild(div);
       log.scrollTop = log.scrollHeight;
@@ -65,55 +62,88 @@
       }, CARE_INTERVAL);
     }
 
-    recognition.onstart = () => {
-      status.innerText = '实时监听中...';
-      addLog('系统', '语音引擎已启动');
-      startCareTimer();
-    };
+    // 初始化语音识别
+    function initRecognition() {
+      if ('webkitSpeechRecognition' in window) {
+        recognition = new webkitSpeechRecognition();
+      } else if ('SpeechRecognition' in window) {
+        recognition = new SpeechRecognition();
+      } else {
+        addLog('系统', '浏览器不支持语音识别', 'error');
+        status.innerText = '不支持语音识别，请用Chrome浏览器';
+        return;
+      }
 
-    recognition.onresult = async (event) => {
-      lastSpeechTime = Date.now(); // 你说话了，重置计时
-      startCareTimer();
+      recognition.lang = 'zh-CN';
+      recognition.continuous = true;
+      recognition.interimResults = true;
 
-      let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript;
-          addLog('你', transcript);
-        } else {
-          interim += transcript;
+      recognition.onstart = () => {
+        status.innerText = '实时监听中...';
+        addLog('系统', '语音引擎已启动');
+        startCareTimer();
+      };
+
+      recognition.onresult = async (event) => {
+        lastSpeechTime = Date.now();
+        startCareTimer();
+
+        let interim = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+            addLog('你', transcript);
+          } else {
+            interim += transcript;
+          }
         }
-      }
 
-      status.innerText = finalTranscript + interim;
+        status.innerText = finalTranscript + interim;
 
-      const fullText = (finalTranscript + interim).toLowerCase();
-      if (!isThinking && TRIGGER_WORDS.some(word => fullText.includes(word))) {
-        isThinking = true;
-        status.innerText = 'AI 思考中...';
-        addLog('系统', '检测到关键词，调用 AI...');
+        const fullText = (finalTranscript + interim).toLowerCase();
+        if (!isThinking && TRIGGER_WORDS.some(word => fullText.includes(word))) {
+          isThinking = true;
+          status.innerText = 'AI 思考中...';
+          addLog('系统', '检测到关键词，调用 AI...');
 
-        const reply = await callBailianAI(finalTranscript + interim);
-        addLog('AI', reply);
-        speak(reply);
-        extractAndNavigate(reply);
+          const reply = await callBailianAI(finalTranscript + interim);
+          addLog('AI', reply);
+          speak(reply);
+          extractAndNavigate(reply);
 
-        isThinking = false;
-        finalTranscript = '';
-      }
-    };
+          isThinking = false;
+          finalTranscript = '';
+        }
+      };
 
-    recognition.onerror = (e) => {
-      status.innerText = '语音错误，重试中...';
-      addLog('系统', '语音识别出错：' + e.error);
-      setTimeout(() => recognition.start(), 1000);
-    };
+      recognition.onerror = (e) => {
+        status.innerText = '语音错误：' + e.error;
+        addLog('系统', '语音识别出错：' + e.error, 'error');
+        // 修复：用 abort 重启
+        if (recognition) {
+          recognition.abort();
+        }
+        setTimeout(() => {
+          initRecognition(); // 重启
+        }, 1000);
+      };
 
-    recognition.onend = () => recognition.start();
+      recognition.onend = () => {
+        // 修复：自动重启，防 "already started" 错误
+        setTimeout(() => {
+          if (recognition) {
+            recognition.start();
+          }
+        }, 100);
+      };
+
+      // 启动
+      recognition.start();
+    }
 
     // 启动
-    recognition.start();
+    initRecognition();
 
     // 调用阿里百炼
     async function callBailianAI(text) {
@@ -137,18 +167,19 @@
         const data = await response.json();
         return data.output.choices[0].message.content || "我在呢。";
       } catch (e) {
-        addLog('系统', 'AI 调用失败：' + e.message);
+        addLog('系统', 'AI 调用失败：' + e.message, 'error');
         return "我在呢，网络有点慢，别急。";
       }
     }
 
     // 语音输出
     function speak(text) {
+      if (synth.speaking) synth.cancel(); // 打断上一个语音
       const utter = new SpeechSynthesisUtterance(text);
       utter.lang = 'zh-CN';
       utter.rate = 0.9;
       utter.onend = () => addLog('系统', '语音播报完成');
-      utter.onerror = () => addLog('系统', '语音播报失败');
+      utter.onerror = () => addLog('系统', '语音播报失败', 'error');
       synth.speak(utter);
     }
 
