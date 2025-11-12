@@ -13,6 +13,7 @@
     .ai { color: #007acc; margin: 8px 0; font-weight: bold; }
     .system { color: #888; font-style: italic; }
     .error { color: red; }
+    .debug { color: orange; font-size: 14px; }
     #nav { margin: 20px; }
     .btn { padding: 12px 24px; font-size: 18px; background: #007acc; color: white; text-decoration: none; border-radius: 8px; display: inline-block; }
   </style>
@@ -38,11 +39,12 @@
     let isThinking = false;
     let lastSpeechTime = Date.now();
     let careTimer = null;
+    let recognitionRestartCount = 0; // 防无限循环计数
 
     const TRIGGER_WORDS = ['开始测试', '去湖边', '好累', '导航', '去哪', '难受', '冷静', '开车', '助手', '帮我', '我想去'];
     const CARE_INTERVAL = 30000; // 30秒
 
-    // 添加对话
+    // 添加日志
     function addLog(speaker, text, className = '') {
       const time = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
       const div = document.createElement('div');
@@ -62,15 +64,20 @@
       }, CARE_INTERVAL);
     }
 
-    // 初始化语音识别
+    // 初始化语音识别（修复循环）
     function initRecognition() {
+      if (recognitionRestartCount > 5) { // 防无限重启
+        addLog('系统', '重启次数过多，停止监听', 'error');
+        return;
+      }
+
       if ('webkitSpeechRecognition' in window) {
         recognition = new webkitSpeechRecognition();
       } else if ('SpeechRecognition' in window) {
         recognition = new SpeechRecognition();
       } else {
-        addLog('系统', '浏览器不支持语音识别', 'error');
-        status.innerText = '不支持语音识别，请用Chrome浏览器';
+        addLog('系统', '浏览器不支持语音识别，请用Chrome', 'error');
+        status.innerText = '不支持语音识别';
         return;
       }
 
@@ -80,7 +87,7 @@
 
       recognition.onstart = () => {
         status.innerText = '实时监听中...';
-        addLog('系统', '语音引擎已启动');
+        addLog('系统', '语音引擎已启动', 'debug');
         startCareTimer();
       };
 
@@ -93,7 +100,7 @@
           const transcript = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
             finalTranscript += transcript;
-            addLog('你', transcript);
+            addLog('你', transcript, 'debug');
           } else {
             interim += transcript;
           }
@@ -105,7 +112,7 @@
         if (!isThinking && TRIGGER_WORDS.some(word => fullText.includes(word))) {
           isThinking = true;
           status.innerText = 'AI 思考中...';
-          addLog('系统', '检测到关键词，调用 AI...');
+          addLog('系统', '检测到关键词：' + fullText.substring(0, 20) + '...', 'debug');
 
           const reply = await callBailianAI(finalTranscript + interim);
           addLog('AI', reply);
@@ -119,27 +126,31 @@
 
       recognition.onerror = (e) => {
         status.innerText = '语音错误：' + e.error;
-        addLog('系统', '语音识别出错：' + e.error, 'error');
-        // 修复：用 abort 重启
+        addLog('系统', '语音识别出错：' + e.error + ' (重启中...)', 'error');
+        recognitionRestartCount++;
         if (recognition) {
-          recognition.abort();
+          recognition.abort(); // 强制停止
         }
         setTimeout(() => {
-          initRecognition(); // 重启
+          initRecognition(); // 延迟重启
         }, 1000);
       };
 
       recognition.onend = () => {
-        // 修复：自动重启，防 "already started" 错误
+        addLog('系统', '监听结束，重启中...', 'debug');
         setTimeout(() => {
           if (recognition) {
             recognition.start();
           }
-        }, 100);
+        }, 200); // 增加延迟防循环
       };
 
       // 启动
-      recognition.start();
+      try {
+        recognition.start();
+      } catch (e) {
+        addLog('系统', '启动失败：' + e.message, 'error');
+      }
     }
 
     // 启动
@@ -172,14 +183,17 @@
       }
     }
 
-    // 语音输出
+    // 语音输出（修复失败）
     function speak(text) {
-      if (synth.speaking) synth.cancel(); // 打断上一个语音
+      if (synth.speaking) {
+        synth.cancel(); // 打断上一个
+      }
       const utter = new SpeechSynthesisUtterance(text);
       utter.lang = 'zh-CN';
       utter.rate = 0.9;
-      utter.onend = () => addLog('系统', '语音播报完成');
-      utter.onerror = () => addLog('系统', '语音播报失败', 'error');
+      utter.volume = 1;
+      utter.onend = () => addLog('系统', '语音播报完成', 'debug');
+      utter.onerror = (e) => addLog('系统', '语音播报失败：' + e.error, 'error');
       synth.speak(utter);
     }
 
