@@ -11,14 +11,15 @@
     #log { margin: 20px auto; max-width: 90%; text-align: left; border: 1px solid #ddd; padding: 10px; border-radius: 8px; max-height: 400px; overflow-y: auto; background: white; }
     .user { color: #333; margin: 8px 0; }
     .ai { color: #007acc; margin: 8px 0; font-weight: bold; }
+    .system { color: #888; font-style: italic; }
     #nav { margin: 20px; }
     .btn { padding: 12px 24px; font-size: 18px; background: #007acc; color: white; text-decoration: none; border-radius: 8px; display: inline-block; }
   </style>
 </head>
 <body>
   <h1>VoiceMood Live</h1>
-  <p>说“开始测试”或“去湖边”，我会实时陪你</p>
-  <div id="status">正在启动语音引擎...</div>
+  <p>说“开始测试”或“去湖边”，我陪你</p>
+  <div id="status">正在启动...</div>
   <div id="log"></div>
   <div id="nav"></div>
 
@@ -32,31 +33,48 @@
     recognition.interimResults = true;
 
     const status = document.getElementById('status');
-    const log = document.getElementById Lance('log');
+    const log = document.getElementById('log');
     const nav = document.getElementById('nav');
     const synth = window.speechSynthesis;
 
     let finalTranscript = '';
     let isThinking = false;
+    let lastSpeechTime = Date.now();
+    let careTimer = null;
 
     const TRIGGER_WORDS = ['开始测试', '去湖边', '好累', '导航', '去哪', '难受', '冷静', '开车', '助手', '帮我', '我想去'];
+    const CARE_INTERVAL = 30000; // 30秒
 
-    // 添加对话（带时间戳）
+    // 添加对话
     function addLog(speaker, text) {
       const time = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
       const div = document.createElement('div');
-      div.className = speaker === 'AI' ? 'ai' : 'user';
+      div.className = speaker === 'AI' ? 'ai' : (speaker === '系统' ? 'system' : 'user');
       div.innerHTML = `<small>${time}</small> <strong>${speaker}：</strong>${text}`;
       log.appendChild(div);
       log.scrollTop = log.scrollHeight;
     }
 
+    // 30秒没说话，关心你
+    function startCareTimer() {
+      clearTimeout(careTimer);
+      careTimer = setTimeout(() => {
+        const careMsg = "还活着吗？我在呢，说句话吧。";
+        addLog('AI', careMsg);
+        speak(careMsg);
+      }, CARE_INTERVAL);
+    }
+
     recognition.onstart = () => {
       status.innerText = '实时监听中...';
       addLog('系统', '语音引擎已启动');
+      startCareTimer();
     };
 
     recognition.onresult = async (event) => {
+      lastSpeechTime = Date.now(); // 你说话了，重置计时
+      startCareTimer();
+
       let interim = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
@@ -77,7 +95,7 @@
         addLog('系统', '检测到关键词，调用 AI...');
 
         const reply = await callBailianAI(finalTranscript + interim);
-        addLog('AI', reply);  // ←←← 文字显示在这里！
+        addLog('AI', reply);
         speak(reply);
         extractAndNavigate(reply);
 
@@ -124,7 +142,7 @@
       }
     }
 
-    // 语音输出 + 文字保险
+    // 语音输出
     function speak(text) {
       const utter = new SpeechSynthesisUtterance(text);
       utter.lang = 'zh-CN';
@@ -134,7 +152,7 @@
       synth.speak(utter);
     }
 
-    // 提取地点 → 高德
+    // 提取地点
     function extractAndNavigate(text) {
       const keywords = ['湖边', '公园', '咖啡馆', '家', '学校', '海边', '山上'];
       for (let kw of keywords) {
